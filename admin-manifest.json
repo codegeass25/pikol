@@ -29,5 +29,11 @@
   ],
   "launch_handler": {
     "client_mode": "navigate-existing"
-  }
+  },
+  "categories": [
+    "sports",
+    "business",
+    "productivity"
+  ],
+  "prefer_related_applications": false
 }

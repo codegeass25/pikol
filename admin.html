@@ -9,8 +9,13 @@
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
-<link rel="manifest" href="admin-manifest.json" />
+<link rel="manifest" href="admin-manifest.json?v=17-ios-push" />
 <meta name="theme-color" content="#0f3d32" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="default" />
+<meta name="apple-mobile-web-app-title" content="PIKOL Admin" />
+<link rel="apple-touch-icon" href="icons/icon-192.png" />
 <script src="config.js"></script>
 <link rel="stylesheet" href="styles.css" />
 </head>
@@ -717,6 +722,10 @@
                 <button class="btn btn-outline btn-sm" type="button" id="btn-pwa-push">Enable PWA Push</button>
               </div>
               <div class="tiny muted" style="margin-top:8px">Install/open the Admin PWA on the In-Charge phone, then enable push here once. Browser notification permission must be allowed.</div>
+              <div id="ios-pwa-guide" class="panel" hidden style="margin-top:10px;padding:10px 12px;background:var(--surface-2,#f7f8f8)">
+                <strong style="display:block;margin-bottom:5px">iPhone setup (iOS 16.4 or later)</strong>
+                <div class="tiny">1. Open this Admin page in Safari.<br>2. Tap <strong>Share</strong> → <strong>Add to Home Screen</strong>.<br>3. Open <strong>PIKOL Admin</strong> from the Home Screen icon.<br>4. Login, return here, then tap <strong>Enable PWA Push</strong> and choose <strong>Allow</strong>.</div>
+              </div>
             </div>
             <div class="grid cols-2" style="gap:0 18px;margin-top:8px">
               <label class="switch" style="margin-bottom:10px"><input type="checkbox" id="s-incharge_notify_bookings" data-key="incharge_notify_bookings"><span class="track"></span><span>Bookings / cancellations</span></label>
@@ -3125,19 +3134,25 @@
   };
 
   /* ---------- In-Charge PWA push ---------- */
-  var ADMIN_SW_VERSION='16';
+  var ADMIN_SW_VERSION='17-ios-push';
+  var PUSH_PREP={reg:null,publicKey:null,ready:false,error:null,promise:null};
   function b64ToUint8(s){s=String(s||'').replace(/-/g,'+').replace(/_/g,'/');while(s.length%4)s+='=';var raw=atob(s),a=new Uint8Array(raw.length);for(var i=0;i<raw.length;i++)a[i]=raw.charCodeAt(i);return a;}
   function bytesEqual(a,b){if(!a||!b)return false;var x=new Uint8Array(a),y=new Uint8Array(b);if(x.length!==y.length)return false;for(var i=0;i<x.length;i++)if(x[i]!==y[i])return false;return true;}
-  function setPushUi(text,subscribed){var st=$('#pwa-push-status'),b=$('#btn-pwa-push');if(st)st.textContent=text;if(b){b.textContent=subscribed?'Disable PWA Push':'Enable / Repair PWA Push';b.dataset.subscribed=subscribed?'1':'0';}}
+  function isIOS(){return /iPad|iPhone|iPod/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);}
+  function iosVersion(){var m=navigator.userAgent.match(/OS (\d+)[_\.](\d+)/i);return m?{major:Number(m[1]),minor:Number(m[2])}:{major:0,minor:0};}
+  function iosAtLeast164(){var v=iosVersion();return !v.major||v.major>16||(v.major===16&&v.minor>=4);}
+  function isStandalonePwa(){return window.matchMedia('(display-mode: standalone)').matches||window.navigator.standalone===true;}
+  function iosGuide(show){var g=$('#ios-pwa-guide');if(g)g.hidden=!show;}
+  function setPushUi(text,subscribed,buttonText){var st=$('#pwa-push-status'),b=$('#btn-pwa-push');if(st)st.textContent=text;if(b){b.textContent=buttonText||(subscribed?'Disable PWA Push':'Enable PWA Push');b.dataset.subscribed=subscribed?'1':'0';}}
   function waitWorkerActive(reg){return new Promise(function(resolve,reject){var w=reg.active||reg.waiting||reg.installing;if(reg.active)return resolve(reg);if(!w)return reject(new Error('Service worker did not start.'));var timer=setTimeout(function(){reject(new Error('Service worker activation timed out.'));},12000);function done(){if(reg.active){clearTimeout(timer);resolve(reg);}}w.addEventListener('statechange',done);done();});}
   async function registerAdminWorker(forceFresh){
     if(!window.isSecureContext)throw new Error('PWA Push requires the HTTPS PIKOL URL (or localhost).');
     if(!('serviceWorker' in navigator))throw new Error('Service workers are not supported on this device.');
-    if(forceFresh){
+    if(forceFresh&&!isIOS()){
       var regs=await navigator.serviceWorker.getRegistrations();
       for(var i=0;i<regs.length;i++){
         var r=regs[i],u=(r.active||r.waiting||r.installing);var script=u&&u.scriptURL||'';
-        if(r.scope.indexOf(location.origin+location.pathname.replace(/[^/]*$/,''))===0 || /(?:admin-)?service-worker\.js/i.test(script)){
+        if(r.scope.indexOf(location.origin+location.pathname.replace(/[^/]*$/,''))===0||/(?:admin-)?service-worker\.js/i.test(script)){
           try{var sub=await r.pushManager.getSubscription();if(sub)await sub.unsubscribe();}catch(_){}
           try{await r.unregister();}catch(_){}
         }
@@ -3149,68 +3164,101 @@
     if(reg.waiting)try{reg.waiting.postMessage({type:'SKIP_WAITING'});}catch(_){}
     return await waitWorkerActive(reg);
   }
-  async function subscribeWithKey(reg,publicKey){
-    var key=b64ToUint8(publicKey);
-    if(key.length!==65)throw new Error('The PWA push server key is invalid.');
-    var old=await reg.pushManager.getSubscription();
-    if(old){
-      var oldKey=old.options&&old.options.applicationServerKey;
-      if(!oldKey||!bytesEqual(oldKey,key)){try{await old.unsubscribe();}catch(_){} old=null;}
-    }
+  async function preparePushContext(){
+    if(PUSH_PREP.promise)return PUSH_PREP.promise;
+    PUSH_PREP.promise=(async function(){
+      try{
+        if(isIOS()&&!iosAtLeast164())throw new Error('iPhone Web Push requires iOS 16.4 or later. Update iOS first.');
+        var pair=await Promise.all([registerAdminWorker(false),api('/api/admin/push/status')]);
+        var key=b64ToUint8(pair[1].public_key);
+        if(key.length!==65)throw new Error('The PWA push server key is invalid.');
+        PUSH_PREP.reg=pair[0];PUSH_PREP.publicKey=pair[1].public_key;PUSH_PREP.ready=true;PUSH_PREP.error=null;
+        return PUSH_PREP;
+      }catch(e){PUSH_PREP.ready=false;PUSH_PREP.error=e;throw e;}
+      finally{PUSH_PREP.promise=null;}
+    })();
+    return PUSH_PREP.promise;
+  }
+  async function subscribeDesktopWithRepair(reg,publicKey){
+    var key=b64ToUint8(publicKey),old=await reg.pushManager.getSubscription();
+    if(old){var oldKey=old.options&&old.options.applicationServerKey;if(!oldKey||!bytesEqual(oldKey,key)){try{await old.unsubscribe();}catch(_){}old=null;}}
     if(old)return old;
     if(reg.pushManager.permissionState){var ps=await reg.pushManager.permissionState({userVisibleOnly:true,applicationServerKey:key});if(ps==='denied')throw new Error('Push permission is denied for this site. Allow Notifications in browser Site Settings.');}
-    return await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:key});
-  }
-  async function enablePushWithRepair(){
-    /* Permission is requested at the very beginning of the button click so the
-       browser still sees a direct user gesture. This is required by stricter
-       mobile browsers. */
-    if(!('Notification' in window)||!('PushManager' in window))throw new Error('This browser does not support Web Push.');
-    if(Notification.permission!=='granted'){var p=await Notification.requestPermission();if(p!=='granted')throw new Error('Notification permission was not allowed.');}
-    var st=await api('/api/admin/push/status');
-    var reg=await registerAdminWorker(false);
-    try{return await subscribeWithKey(reg,st.public_key);}
+    try{return await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:key});}
     catch(first){
       var msg=String(first&&first.message||first||'');
       if(!/push service|registration failed|abort|invalid state|application server/i.test(msg))throw first;
-      /* Repair pass 1: remove legacy/stale worker + browser subscription. */
       reg=await registerAdminWorker(true);
-      try{return await subscribeWithKey(reg,st.public_key);}
-      catch(second){
-        var msg2=String(second&&second.message||second||'');
-        if(!/push service|registration failed|abort|invalid state|application server/i.test(msg2))throw second;
-        /* Repair pass 2: rotate the server VAPID key, then make one completely
-           fresh browser subscription. This addresses a stale/malformed key pair. */
-        var repaired=await api('/api/admin/push/repair-key',{method:'POST',body:{}});
-        reg=await registerAdminWorker(true);
-        try{return await subscribeWithKey(reg,repaired.public_key);}
-        catch(third){
-          var finalMsg=String(third&&third.message||third||'Push registration failed');
-          if(/push service|registration failed/i.test(finalMsg))throw new Error('The browser cannot reach its Web Push service even after a full PWA repair. Use normal Chrome/Edge (not Incognito), allow Notifications, and make sure the device can reach Google/Microsoft push services, then press Enable / Repair PWA Push again.');
-          throw third;
-        }
-      }
+      return await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:key});
+    }
+  }
+  async function subscribeIOSDirect(){
+    if(!isStandalonePwa())throw new Error('On iPhone, open PIKOL Admin from its Home Screen icon before enabling Web Push.');
+    if(!iosAtLeast164())throw new Error('iPhone Web Push requires iOS 16.4 or later.');
+    if(!PUSH_PREP.ready||!PUSH_PREP.reg||!PUSH_PREP.publicKey)throw new Error('PWA Push is still preparing. Wait a moment, then tap Enable PWA Push again.');
+    var current=await PUSH_PREP.reg.pushManager.getSubscription();
+    if(current)return current;
+    if(Notification.permission==='denied')throw new Error('Notifications are blocked for PIKOL Admin. Open iPhone Settings → Notifications → PIKOL Admin and allow notifications.');
+    if(Notification.permission!=='granted'){
+      var permission=await Notification.requestPermission();
+      if(permission!=='granted')throw new Error('Notification permission was not allowed.');
+    }
+    var key=b64ToUint8(PUSH_PREP.publicKey);
+    try{return await PUSH_PREP.reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:key});}
+    catch(e){
+      var msg=String(e&&e.message||e||'Push registration failed');
+      if(/denied|permission/i.test(msg))throw new Error('Notifications are blocked for PIKOL Admin. Open iPhone Settings → Notifications → PIKOL Admin and allow notifications.');
+      throw new Error('iPhone could not create the Web Push subscription. Confirm PIKOL Admin was opened from the Home Screen, then try once on another network (Wi-Fi/mobile data). If it still fails, remove the PIKOL Admin Home Screen app, add it again from Safari, reopen it, and enable push once more.');
     }
   }
   async function refreshAdminPushStatus(){
-    var b=$('#btn-pwa-push'); if(!b)return;
-    if(!('serviceWorker' in navigator)||!('PushManager' in window)||!('Notification' in window)){setPushUi('PWA push is not supported by this browser.',false);b.disabled=true;return;}
-    if(!window.isSecureContext){setPushUi('Open the HTTPS PIKOL URL to enable PWA Push.',false);b.disabled=false;return;}
-    try{var reg=await registerAdminWorker(false),sub=await reg.pushManager.getSubscription();setPushUi(sub?'This phone is subscribed for In-Charge push alerts.':(Notification.permission==='denied'?'Notifications are blocked in browser Site Settings.':'This phone is ready—press Enable / Repair PWA Push.'),!!sub);b.disabled=false;}catch(e){setPushUi('Push status: '+e.message,false);b.disabled=false;}
+    var b=$('#btn-pwa-push');if(!b)return;
+    iosGuide(false);
+    if(!window.isSecureContext){setPushUi('Open the HTTPS PIKOL URL to enable PWA Push.',false);b.disabled=true;return;}
+    /* On iPhone the Push/Notification APIs may not be exposed in a normal
+       browser tab. Show the correct Home Screen requirement before feature detection. */
+    if(isIOS()){
+      if(!iosAtLeast164()){setPushUi('This iPhone needs iOS 16.4 or later for Web Push.',false,'iOS Update Required');b.disabled=true;iosGuide(true);return;}
+      if(!isStandalonePwa()){
+        setPushUi('iPhone requires the Admin web app to be added to the Home Screen before Web Push can be enabled.',false,'iPhone Setup');
+        b.disabled=false;iosGuide(true);return;
+      }
+    }
+    if(!('serviceWorker' in navigator)||!('PushManager' in window)||!('Notification' in window)){setPushUi(isIOS()?'This installed iPhone web app does not expose Web Push. Confirm iOS is updated, then reinstall PIKOL Admin from Safari.':'PWA push is not supported by this browser.',false);b.disabled=true;return;}
+    setPushUi('Preparing secure PWA Push…',false,'Preparing…');b.disabled=true;
+    try{
+      await preparePushContext();
+      var sub=await PUSH_PREP.reg.pushManager.getSubscription();
+      if(sub){setPushUi(isIOS()?'This iPhone is subscribed for In-Charge push alerts.':'This device is subscribed for In-Charge push alerts.',true);b.disabled=false;return;}
+      if(Notification.permission==='denied'){
+        setPushUi(isIOS()?'Notifications are blocked. Use iPhone Settings → Notifications → PIKOL Admin.':'Notifications are blocked in browser Site Settings.',false);
+      }else setPushUi(isIOS()?'PIKOL Admin is installed and ready. Tap Enable PWA Push.':'This device is ready. Tap Enable PWA Push.',false);
+      b.disabled=false;
+    }catch(e){setPushUi('Push setup: '+e.message,false,'Retry PWA Setup');b.disabled=false;}
   }
   var pwaPushBtn=$('#btn-pwa-push');
   if(pwaPushBtn)pwaPushBtn.onclick=async function(){
+    if(isIOS()&&!isStandalonePwa()){
+      iosGuide(true);
+      toast('On iPhone: Safari → Share → Add to Home Screen, then open PIKOL Admin from the new Home Screen icon.','error');
+      return;
+    }
     busy(pwaPushBtn,true);
     try{
-      var reg=await registerAdminWorker(false),current=await reg.pushManager.getSubscription();
-      if(current){await api('/api/admin/push/unsubscribe',{method:'POST',body:{endpoint:current.endpoint}});await current.unsubscribe();toast('PWA push disabled on this device.','success');}
-      else{
-        var sub=await enablePushWithRepair();
+      if(!PUSH_PREP.ready)await preparePushContext();
+      var reg=PUSH_PREP.reg||await registerAdminWorker(false),current=await reg.pushManager.getSubscription();
+      if(current){
+        await api('/api/admin/push/unsubscribe',{method:'POST',body:{endpoint:current.endpoint}});
+        await current.unsubscribe();
+        toast('PWA push disabled on this device.','success');
+      }else{
+        var sub=isIOS()?await subscribeIOSDirect():await subscribeDesktopWithRepair(reg,PUSH_PREP.publicKey);
         await api('/api/admin/push/subscribe',{method:'POST',body:{subscription:sub.toJSON()}});
-        toast('PWA push enabled for this In-Charge device.','success');
+        toast(isIOS()?'PWA push enabled on this iPhone.':'PWA push enabled for this In-Charge device.','success');
       }
       await refreshAdminPushStatus();
-    }catch(e){toast(e.message,'error');await refreshAdminPushStatus();}finally{busy(pwaPushBtn,false);}
+    }catch(e){toast(e.message,'error');await refreshAdminPushStatus();}
+    finally{busy(pwaPushBtn,false);}
   };
 
   /* ---------- branding assets (upload / URL / remove) ---------- */
@@ -3579,7 +3627,7 @@
 
 <script>
 /* PIKOL_PWA_INSTALL_RUNTIME */
-(function(){'use strict';var btn=document.getElementById('pwa-install-admin'),deferredPrompt=null,KEY='pikol_admin_installed_v2';function standalone(){return window.matchMedia('(display-mode: standalone)').matches||window.navigator.standalone===true;}function marked(){return localStorage.getItem(KEY)==='1';}function setMarked(v){if(v)localStorage.setItem(KEY,'1');else localStorage.removeItem(KEY);}function sync(){if(!btn)return;if(standalone()){setMarked(true);btn.hidden=true;return;}btn.hidden=!deferredPrompt||marked();}window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();deferredPrompt=e;if(!standalone())setMarked(false);sync();});window.addEventListener('appinstalled',function(){setMarked(true);deferredPrompt=null;sync();});window.addEventListener('pageshow',sync);document.addEventListener('visibilitychange',function(){if(!document.hidden)sync();});if(btn)btn.addEventListener('click',async function(){if(!deferredPrompt)return;btn.disabled=true;try{await deferredPrompt.prompt();var c=await deferredPrompt.userChoice;if(c&&c.outcome==='accepted')setMarked(true);}catch(_){}deferredPrompt=null;btn.disabled=false;sync();});if('serviceWorker' in navigator)window.addEventListener('load',function(){navigator.serviceWorker.register('service-worker.js',{scope:'./'}).catch(function(){});});sync();})();
+(function(){'use strict';var btn=document.getElementById('pwa-install-admin'),deferredPrompt=null,KEY='pikol_admin_installed_v3';function ios(){return /iPad|iPhone|iPod/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);}function standalone(){return window.matchMedia('(display-mode: standalone)').matches||window.navigator.standalone===true;}function marked(){return localStorage.getItem(KEY)==='1';}function setMarked(v){if(v)localStorage.setItem(KEY,'1');else localStorage.removeItem(KEY);}function showIosGuide(){var g=document.getElementById('ios-pwa-guide');if(g)g.hidden=false;if(typeof toast==='function')toast('iPhone: Safari → Share → Add to Home Screen. Then open PIKOL Admin from the Home Screen icon.','error');}function sync(){if(!btn)return;if(standalone()){setMarked(true);btn.hidden=true;return;}if(ios()){btn.hidden=false;btn.textContent='Install Admin App on iPhone';return;}btn.textContent='Install Admin App';btn.hidden=!deferredPrompt||marked();}window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();deferredPrompt=e;if(!standalone())setMarked(false);sync();});window.addEventListener('appinstalled',function(){setMarked(true);deferredPrompt=null;sync();});window.addEventListener('pageshow',sync);document.addEventListener('visibilitychange',function(){if(!document.hidden)sync();});if(btn)btn.addEventListener('click',async function(){if(ios()){showIosGuide();return;}if(!deferredPrompt)return;btn.disabled=true;try{await deferredPrompt.prompt();var c=await deferredPrompt.userChoice;if(c&&c.outcome==='accepted')setMarked(true);}catch(_){}deferredPrompt=null;btn.disabled=false;sync();});if('serviceWorker' in navigator)window.addEventListener('load',function(){navigator.serviceWorker.register('service-worker.js?v=17-ios-push',{scope:'./',updateViaCache:'none'}).catch(function(){});});sync();})();
 </script>
 
 </body>

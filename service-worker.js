@@ -1,4 +1,4 @@
-const CACHE = 'pikol-shared-shell-16-push-repair';
+const CACHE = 'pikol-shared-shell-17-ios-push';
 const SHELL = [
   './index.html','./admin.html','./scoring.html','./styles.css','./cards.js','./config.js','./qr-lite.js',
   './manifest.json','./admin-manifest.json','./icons/icon-192.png','./icons/icon-512.png'
