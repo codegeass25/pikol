@@ -683,7 +683,8 @@
             <div class="field"><label class="label">Gateway URL</label><input class="input" id="s-sms_gateway_url" data-key="sms_gateway_url" placeholder="https://.../api/3rdparty/v1/messages"></div>
             <div class="field"><label class="label">Username</label><input class="input" id="s-sms_gateway_username" data-key="sms_gateway_username" autocomplete="off"></div>
             <div class="field"><label class="label">Password</label><input class="input" id="s-sms_gateway_password" data-key="sms_gateway_password" type="password" autocomplete="new-password" placeholder="Leave unchanged to keep saved password"></div>
-            <div class="field"><label class="label">SIM / device number</label><input class="input" id="s-sms_gateway_sim" data-key="sms_gateway_sim"></div>
+            <div class="field"><label class="label">Sender SIM mobile number</label><input class="input" id="s-sms_gateway_sender_mobile" data-key="sms_gateway_sender_mobile" inputmode="tel" placeholder="e.g. 09101153351"><span class="field-hint">The SMS must be sent using this physical SIM. The backend resolves its SIM slot/device from SMSGate.</span></div>
+            <div class="field"><label class="label">SIM slot override (optional)</label><input class="input" id="s-sms_gateway_sim" data-key="sms_gateway_sim" inputmode="numeric" placeholder="blank, 1, 2, or 3"><span class="field-hint">Normally leave blank when Sender SIM mobile number is set.</span></div>
             <div class="field"><label class="label">Default country code</label><input class="input" id="s-sms_gateway_default_country" data-key="sms_gateway_default_country" placeholder="+63"></div>
             <div class="field"><label class="label">Timeout (ms)</label><input class="input" id="s-sms_gateway_timeout_ms" data-key="sms_gateway_timeout_ms" inputmode="numeric"></div>
           </div>
@@ -723,7 +724,7 @@
               <label class="switch" style="margin-bottom:10px"><input type="checkbox" id="s-incharge_notify_memberships" data-key="incharge_notify_memberships"><span class="track"></span><span>Membership requests / payments</span></label>
               <label class="switch" style="margin-bottom:10px"><input type="checkbox" id="s-incharge_notify_events" data-key="incharge_notify_events"><span class="track"></span><span>Tournament / Open Play</span></label>
             </div>
-            <div class="tiny muted">Save Notification Settings first, then run the test. If these contact fields are blank, the backend falls back to the active Admin account, then valid facility contact details. Email/SMS use their global transport settings. PWA Push works independently after it is enabled on the In-Charge device.</div>
+            <div class="tiny muted">Save Notification Settings first, then run the test. The dedicated In-Charge mobile/email fields are authoritative—alerts are never silently redirected to the facility contact number. Email/SMS use their global transport settings. PWA Push works independently after it is enabled on the In-Charge device.</div>
           </div>
 
           <div class="grid cols-2" style="gap:0 18px">
@@ -3043,7 +3044,8 @@
     bits.push('<strong>' + esc(g.provider_label || 'SMS Gateway') + '</strong>');
     bits.push('Endpoint: ' + esc(g.endpoint_host || 'not configured'));
     bits.push('Credentials: ' + (g.configured ? 'saved securely' : 'incomplete'));
-    if (g.sim_number) bits.push('SIM: ' + esc(g.sim_number));
+    if (g.sender_mobile_masked) bits.push('Sender SIM: ' + esc(g.sender_mobile_masked));
+    if (g.sim_number) bits.push('SIM slot override: ' + esc(g.sim_number));
     bits.push('Country: ' + esc(g.default_country || '+63'));
     host.innerHTML = bits.join(' &middot; ');
   }
@@ -3099,7 +3101,7 @@
   saveSettings($('#set-tournament'), ['tournament_default_format','tournament_default_seeding','tournament_match_duration_minutes','tournament_rest_minutes','tournament_group_size','tournament_group_qualifiers','tournament_scoring_best_of','tournament_scoring_points_to_win','tournament_scoring_win_by','tournament_third_place','tournament_double_reset_final']);
   /* smtp_from_name is derived from the white-label facility name. */
   saveSettings($('#set-email'), ['email_enabled','smtp_host','smtp_port','smtp_secure','smtp_user','smtp_pass','smtp_from_email']);
-  saveSettings($('#set-sms'), ['sms_enabled','sms_gateway_transport_enabled','sms_gateway_url','sms_gateway_username','sms_gateway_password','sms_gateway_sim','sms_gateway_default_country','sms_gateway_timeout_ms']);
+  saveSettings($('#set-sms'), ['sms_enabled','sms_gateway_transport_enabled','sms_gateway_url','sms_gateway_username','sms_gateway_password','sms_gateway_sender_mobile','sms_gateway_sim','sms_gateway_default_country','sms_gateway_timeout_ms']);
   var INCHARGE_SETTING_KEYS=['incharge_notifications_enabled','incharge_name','incharge_mobile','incharge_email','incharge_sms_enabled','incharge_email_enabled','incharge_push_enabled','incharge_notify_bookings','incharge_notify_payments','incharge_notify_memberships','incharge_notify_events'];
   saveSettings($('#set-notify'), ['notify_enabled','notify_welcome','notify_bookings','notify_payments','notify_events','notify_announcements','notify_reminders','notify_reminder_hours','notify_event_reminder_hours','notify_quiet_hours','notify_tournament_registration','notify_tournament_payment','notify_tournament_approval','notify_match_schedule','notify_match_reminders','notify_ratings','notify_open_play_registration','notify_open_play_payment','notify_event_updates'].concat(INCHARGE_SETTING_KEYS));
   function collectSettingValues(keys){var body={};keys.forEach(function(k){var el=$('#s-'+k);if(!el)return;body[k]=el.type==='checkbox'?(el.checked?'1':'0'):el.value;});return body;}
@@ -3113,7 +3115,7 @@
       SETTINGS=saved;
       var r=await api('/api/admin/test-incharge',{method:'POST',body:{}});
       var parts=[];
-      if((r.channels||[]).indexOf('sms')>=0)parts.push('SMS to '+(r.sms_to_masked||maskMobile(saved.incharge_mobile)));
+      if((r.channels||[]).indexOf('sms')>=0){var senderNote=r.sms_sender_masked?(' from '+r.sms_sender_masked):'';parts.push('SMS to '+(r.sms_to_masked||maskMobile(saved.incharge_mobile))+senderNote);}
       if((r.channels||[]).indexOf('email')>=0)parts.push('Email');
       if((r.channels||[]).indexOf('push')>=0)parts.push('PWA Push');
       toast('In-Charge settings saved. Test queued via '+(parts.join(' + ')||'configured channel')+'.','success');
@@ -3123,52 +3125,89 @@
   };
 
   /* ---------- In-Charge PWA push ---------- */
+  var ADMIN_SW_VERSION='16';
   function b64ToUint8(s){s=String(s||'').replace(/-/g,'+').replace(/_/g,'/');while(s.length%4)s+='=';var raw=atob(s),a=new Uint8Array(raw.length);for(var i=0;i<raw.length;i++)a[i]=raw.charCodeAt(i);return a;}
-  function setPushUi(text,subscribed){var st=$('#pwa-push-status'),b=$('#btn-pwa-push');if(st)st.textContent=text;if(b){b.textContent=subscribed?'Disable PWA Push':'Enable PWA Push';b.dataset.subscribed=subscribed?'1':'0';}}
-  async function adminPushRegistration(forceRefresh){
-    if(!window.isSecureContext)throw new Error('PWA Push requires HTTPS (or localhost). Open the secure HTTPS PIKOL URL.');
+  function bytesEqual(a,b){if(!a||!b)return false;var x=new Uint8Array(a),y=new Uint8Array(b);if(x.length!==y.length)return false;for(var i=0;i<x.length;i++)if(x[i]!==y[i])return false;return true;}
+  function setPushUi(text,subscribed){var st=$('#pwa-push-status'),b=$('#btn-pwa-push');if(st)st.textContent=text;if(b){b.textContent=subscribed?'Disable PWA Push':'Enable / Repair PWA Push';b.dataset.subscribed=subscribed?'1':'0';}}
+  function waitWorkerActive(reg){return new Promise(function(resolve,reject){var w=reg.active||reg.waiting||reg.installing;if(reg.active)return resolve(reg);if(!w)return reject(new Error('Service worker did not start.'));var timer=setTimeout(function(){reject(new Error('Service worker activation timed out.'));},12000);function done(){if(reg.active){clearTimeout(timer);resolve(reg);}}w.addEventListener('statechange',done);done();});}
+  async function registerAdminWorker(forceFresh){
+    if(!window.isSecureContext)throw new Error('PWA Push requires the HTTPS PIKOL URL (or localhost).');
     if(!('serviceWorker' in navigator))throw new Error('Service workers are not supported on this device.');
-    var reg=await navigator.serviceWorker.register('service-worker.js',{scope:'./',updateViaCache:'none'});
-    if(forceRefresh && reg.update)try{await reg.update();}catch(_){}
+    if(forceFresh){
+      var regs=await navigator.serviceWorker.getRegistrations();
+      for(var i=0;i<regs.length;i++){
+        var r=regs[i],u=(r.active||r.waiting||r.installing);var script=u&&u.scriptURL||'';
+        if(r.scope.indexOf(location.origin+location.pathname.replace(/[^/]*$/,''))===0 || /(?:admin-)?service-worker\.js/i.test(script)){
+          try{var sub=await r.pushManager.getSubscription();if(sub)await sub.unsubscribe();}catch(_){}
+          try{await r.unregister();}catch(_){}
+        }
+      }
+      await new Promise(function(resolve){setTimeout(resolve,350);});
+    }
+    var reg=await navigator.serviceWorker.register('service-worker.js?v='+ADMIN_SW_VERSION,{scope:'./',updateViaCache:'none'});
+    if(reg.update)try{await reg.update();}catch(_){}
     if(reg.waiting)try{reg.waiting.postMessage({type:'SKIP_WAITING'});}catch(_){}
-    return navigator.serviceWorker.ready;
+    return await waitWorkerActive(reg);
   }
-  async function subscribeAdminPush(reg,publicKey){
+  async function subscribeWithKey(reg,publicKey){
     var key=b64ToUint8(publicKey);
-    if(key.length!==65)throw new Error('The PWA push server key is invalid. Restart the backend and try again.');
-    try{return await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:key});}
-    catch(firstErr){
-      /* Chromium can retain a stale push registration after a worker update. Refresh once and retry. */
-      var msg=String(firstErr&&firstErr.message||firstErr||'');
-      if(!/push service|registration failed|abort|invalid state/i.test(msg))throw firstErr;
-      await new Promise(function(resolve){setTimeout(resolve,700);});
-      var fresh=await adminPushRegistration(true),old=await fresh.pushManager.getSubscription();
-      if(old)try{await old.unsubscribe();}catch(_){}
-      try{return await fresh.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:key});}
-      catch(secondErr){
-        var m=String(secondErr&&secondErr.message||secondErr||'Push registration failed');
-        if(/push service/i.test(m))throw new Error('Browser push service could not register this device. SMS/Email alerts still work. Check browser notification permission/network, then press Enable PWA Push again.');
-        throw secondErr;
+    if(key.length!==65)throw new Error('The PWA push server key is invalid.');
+    var old=await reg.pushManager.getSubscription();
+    if(old){
+      var oldKey=old.options&&old.options.applicationServerKey;
+      if(!oldKey||!bytesEqual(oldKey,key)){try{await old.unsubscribe();}catch(_){} old=null;}
+    }
+    if(old)return old;
+    if(reg.pushManager.permissionState){var ps=await reg.pushManager.permissionState({userVisibleOnly:true,applicationServerKey:key});if(ps==='denied')throw new Error('Push permission is denied for this site. Allow Notifications in browser Site Settings.');}
+    return await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:key});
+  }
+  async function enablePushWithRepair(){
+    /* Permission is requested at the very beginning of the button click so the
+       browser still sees a direct user gesture. This is required by stricter
+       mobile browsers. */
+    if(!('Notification' in window)||!('PushManager' in window))throw new Error('This browser does not support Web Push.');
+    if(Notification.permission!=='granted'){var p=await Notification.requestPermission();if(p!=='granted')throw new Error('Notification permission was not allowed.');}
+    var st=await api('/api/admin/push/status');
+    var reg=await registerAdminWorker(false);
+    try{return await subscribeWithKey(reg,st.public_key);}
+    catch(first){
+      var msg=String(first&&first.message||first||'');
+      if(!/push service|registration failed|abort|invalid state|application server/i.test(msg))throw first;
+      /* Repair pass 1: remove legacy/stale worker + browser subscription. */
+      reg=await registerAdminWorker(true);
+      try{return await subscribeWithKey(reg,st.public_key);}
+      catch(second){
+        var msg2=String(second&&second.message||second||'');
+        if(!/push service|registration failed|abort|invalid state|application server/i.test(msg2))throw second;
+        /* Repair pass 2: rotate the server VAPID key, then make one completely
+           fresh browser subscription. This addresses a stale/malformed key pair. */
+        var repaired=await api('/api/admin/push/repair-key',{method:'POST',body:{}});
+        reg=await registerAdminWorker(true);
+        try{return await subscribeWithKey(reg,repaired.public_key);}
+        catch(third){
+          var finalMsg=String(third&&third.message||third||'Push registration failed');
+          if(/push service|registration failed/i.test(finalMsg))throw new Error('The browser cannot reach its Web Push service even after a full PWA repair. Use normal Chrome/Edge (not Incognito), allow Notifications, and make sure the device can reach Google/Microsoft push services, then press Enable / Repair PWA Push again.');
+          throw third;
+        }
       }
     }
   }
   async function refreshAdminPushStatus(){
     var b=$('#btn-pwa-push'); if(!b)return;
     if(!('serviceWorker' in navigator)||!('PushManager' in window)||!('Notification' in window)){setPushUi('PWA push is not supported by this browser.',false);b.disabled=true;return;}
-    try{var reg=await adminPushRegistration(),sub=await reg.pushManager.getSubscription();setPushUi(sub?'This phone is subscribed for In-Charge alerts.':(Notification.permission==='denied'?'Notifications are blocked in browser settings.':'This phone is not yet subscribed.'),!!sub);b.disabled=false;}catch(e){setPushUi('Push status unavailable: '+e.message,false);}
+    if(!window.isSecureContext){setPushUi('Open the HTTPS PIKOL URL to enable PWA Push.',false);b.disabled=false;return;}
+    try{var reg=await registerAdminWorker(false),sub=await reg.pushManager.getSubscription();setPushUi(sub?'This phone is subscribed for In-Charge push alerts.':(Notification.permission==='denied'?'Notifications are blocked in browser Site Settings.':'This phone is ready—press Enable / Repair PWA Push.'),!!sub);b.disabled=false;}catch(e){setPushUi('Push status: '+e.message,false);b.disabled=false;}
   }
   var pwaPushBtn=$('#btn-pwa-push');
   if(pwaPushBtn)pwaPushBtn.onclick=async function(){
     busy(pwaPushBtn,true);
     try{
-      var reg=await adminPushRegistration(),current=await reg.pushManager.getSubscription();
+      var reg=await registerAdminWorker(false),current=await reg.pushManager.getSubscription();
       if(current){await api('/api/admin/push/unsubscribe',{method:'POST',body:{endpoint:current.endpoint}});await current.unsubscribe();toast('PWA push disabled on this device.','success');}
       else{
-        if(Notification.permission!=='granted'){var permission=await Notification.requestPermission();if(permission!=='granted')throw new Error('Notification permission was not allowed.');}
-        var st=await api('/api/admin/push/status');
-        var sub=await subscribeAdminPush(reg,st.public_key);
+        var sub=await enablePushWithRepair();
         await api('/api/admin/push/subscribe',{method:'POST',body:{subscription:sub.toJSON()}});
-        toast('PWA push enabled for the In-Charge phone.','success');
+        toast('PWA push enabled for this In-Charge device.','success');
       }
       await refreshAdminPushStatus();
     }catch(e){toast(e.message,'error');await refreshAdminPushStatus();}finally{busy(pwaPushBtn,false);}
@@ -3247,12 +3286,13 @@
       } });
   };
   $('#btn-test-sms').onclick = function () {
+    var def=(SETTINGS&&SETTINGS.incharge_mobile)||'';
     modal({ title: 'Send test SMS',
-      body: '<div class="field"><label class="label" for="ts-to">Mobile number</label><input class="input" id="ts-to" placeholder="+63 917 000 0000" /></div>',
+      body: '<div class="field"><label class="label" for="ts-to">Recipient mobile number</label><input class="input" id="ts-to" value="'+esc(def)+'" placeholder="+63 917 000 0000" /></div><div class="tiny muted">The sender is controlled by the Sender SIM mobile number in SMS Gateway settings.</div>',
       confirmText: 'Send test SMS',
       onConfirm: function (host) {
         return api('/api/admin/test-sms', { method: 'POST', body: { to: $('#ts-to', host).value.trim() } })
-          .then(function () { toast('Test SMS sent.', 'success'); });
+          .then(function (r) { toast('Test SMS sent to '+maskMobile(r.recipient||$('#ts-to',host).value)+' from '+(r.sender_mobile_masked||'configured SIM')+'.', 'success'); });
       } });
   };
   $('#form-adminpw').addEventListener('submit', function (e) {

@@ -1,10 +1,12 @@
-const CACHE = 'pikol-shared-shell-13-push-fix';
+const CACHE = 'pikol-shared-shell-16-push-repair';
 const SHELL = [
   './index.html','./admin.html','./scoring.html','./styles.css','./cards.js','./config.js','./qr-lite.js',
   './manifest.json','./admin-manifest.json','./icons/icon-192.png','./icons/icon-512.png'
 ];
 self.addEventListener('install', event => {
-  event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(SHELL)));
+  event.waitUntil(caches.open(CACHE).then(async cache => {
+    await Promise.all(SHELL.map(async url => { try { await cache.add(url); } catch (_) {} }));
+  }));
   self.skipWaiting();
 });
 self.addEventListener('activate', event => {
