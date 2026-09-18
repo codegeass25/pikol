@@ -1,4 +1,4 @@
-const CACHE = 'pikol-shared-shell-23-cross-device-badge-sync';
+const CACHE = 'pikol-v24-push-retry-visible-badge';
 const SHELL = [
   './index.html','./admin.html','./scoring.html','./styles.css','./cards.js','./config.js','./qr-lite.js',
   './manifest.json','./admin-manifest.json','./icons/icon-192.png','./icons/icon-512.png'
