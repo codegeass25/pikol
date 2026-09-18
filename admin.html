@@ -19,7 +19,7 @@
 <script src="config.js"></script>
 <link rel="stylesheet" href="styles.css" />
 </head>
-<body>
+<body class="admin-app">
 
 <!-- ===================== BOOT SPLASH ==================== -->
 <div id="boot-splash" class="boot-splash" role="status" aria-live="polite">
@@ -103,6 +103,7 @@
           <span class="tiny muted" id="rt-status" title="Real-time connection" style="display:inline-flex;align-items:center;gap:5px;white-space:nowrap">
             <span id="rt-dot" style="width:8px;height:8px;border-radius:50%;background:#9ca3af;display:inline-block"></span><span id="rt-text">Connecting…</span>
           </span>
+          <button class="btn btn-ghost btn-icon admin-alert-bell" id="btn-incharge-alerts" title="In-Charge alerts" aria-label="In-Charge alerts">🔔<span class="admin-alert-count hidden" id="admin-alert-count"></span></button>
           <button class="btn btn-ghost btn-icon" id="btn-refresh" title="Refresh" aria-label="Refresh">⟳</button>
           <button class="btn btn-primary btn-sm" id="btn-new-booking">＋ Booking</button>
         </div>
@@ -790,7 +791,8 @@
 
         <section class="settings-section hidden mt-5" id="set-security">
           <h2 class="section-title" style="margin-bottom:16px">Security & backup</h2>
-          <form id="form-adminpw" style="max-width:420px">
+          <button id="pwa-install-admin" class="btn btn-primary btn-block pwa-install-inline" type="button" hidden>Install Admin App</button>
+                    <form id="form-adminpw" style="max-width:420px">
             <div class="field"><label class="label" for="ap-cur">Current password</label><input class="input" id="ap-cur" type="password" required autocomplete="current-password" /></div>
             <div class="field"><label class="label" for="ap-new">New password</label><input class="input" id="ap-new" type="password" minlength="8" required autocomplete="new-password" /></div>
             <button class="btn btn-primary" type="submit" data-loading="Saving...">Change admin password</button>
@@ -830,17 +832,16 @@
       </section>
     </main>
   </div>
+  <nav class="admin-mobile-nav" id="admin-mobile-nav" aria-label="Admin primary">
+    <button data-mobile-page="dashboard" class="is-active"><span>⌂</span>Home</button>
+    <button data-mobile-page="calendar"><span>▥</span>Schedule</button>
+    <button data-mobile-page="payments"><span>₱</span>Payments</button>
+    <button data-mobile-page="events"><span>🏆</span>Events</button>
+    <button data-mobile-page="more"><span>•••</span>More</button>
+  </nav>
 </div>
 
-<nav class="admin-mobile-nav" id="admin-mobile-nav" aria-label="Admin primary">
-  <button data-mobile-page="dashboard" class="is-active"><span>⌂</span>Home</button>
-  <button data-mobile-page="calendar"><span>▥</span>Schedule</button>
-  <button data-mobile-page="payments"><span>₱</span>Payments</button>
-  <button data-mobile-page="events"><span>🏆</span>Events</button>
-  <button data-mobile-page="more"><span>•••</span>More</button>
-</nav>
 <div class="toast-host" id="toasts" role="status" aria-live="polite"></div>
-<button id="pwa-install-admin" class="btn btn-primary btn-block pwa-install-inline" type="button" hidden>Install Admin App</button>
 <div id="modal-root"></div>
 
 <script src="qr-lite.js"></script>
@@ -1365,6 +1366,56 @@
     }).join('');
   }
   var current = 'dashboard';
+  var INCHARGE_ALERTS = [], INCHARGE_UNREAD = 0;
+  async function applyPwaBadgeCount(count) {
+    var n=Math.max(0,Number(count)||0);
+    try {
+      if(n>0 && 'setAppBadge' in navigator) await navigator.setAppBadge(n);
+      else if(n===0 && 'clearAppBadge' in navigator) await navigator.clearAppBadge();
+    } catch(_) {}
+  }
+  function updateInChargeAlertUi(unread) {
+    INCHARGE_UNREAD=Math.max(0,Number(unread)||0);
+    var c=$('#admin-alert-count'),b=$('#btn-incharge-alerts');
+    if(c){c.textContent=INCHARGE_UNREAD>99?'99+':String(INCHARGE_UNREAD);c.classList.toggle('hidden',INCHARGE_UNREAD===0);}
+    if(b)b.setAttribute('aria-label',INCHARGE_UNREAD?('In-Charge alerts, '+INCHARGE_UNREAD+' unread'):'In-Charge alerts');
+    applyPwaBadgeCount(INCHARGE_UNREAD);
+  }
+  function loadInChargeAlerts() {
+    if(!TOKEN||!USER)return Promise.resolve({unread:0,alerts:[]});
+    return api('/api/admin/incharge-alerts?limit=60').then(function(d){
+      INCHARGE_ALERTS=d.alerts||[];updateInChargeAlertUi(d.unread||0);return d;
+    }).catch(function(){return {unread:INCHARGE_UNREAD,alerts:INCHARGE_ALERTS};});
+  }
+  function alertPreviewBody(a){return esc(String(a.body||'').replace(/\s+/g,' ').slice(0,180));}
+  function renderInChargeAlertList() {
+    var rows=INCHARGE_ALERTS.map(function(a){
+      var unread=!a.read_at;
+      return '<button type="button" class="incharge-alert-row'+(unread?' is-unread':'')+'" data-alert-open="'+a.id+'">'+
+        '<span class="incharge-alert-dot" aria-hidden="true"></span><span class="incharge-alert-main"><strong>'+esc(a.subject||'PIKOL Alert')+'</strong>'+
+        '<span class="tiny muted">'+alertPreviewBody(a)+'</span><span class="tiny muted">'+esc(stamp(a.created_at))+'</span></span><span class="list-chevron">›</span></button>';
+    }).join('');
+    return '<div class="spread incharge-alert-toolbar"><div><strong>Needs attention</strong><div class="tiny muted">Same unread count drives the PWA app-icon badge.</div></div>'+
+      (INCHARGE_UNREAD?'<button class="btn btn-ghost btn-sm" type="button" data-alert-read-all>Mark all read</button>':'')+'</div>'+
+      '<div class="incharge-alert-list">'+(rows||'<div class="empty"><strong>All caught up</strong><span class="muted tiny">No operational alerts need review.</span></div>')+'</div>';
+  }
+  function showInChargeAlerts(){
+    loadInChargeAlerts().then(function(){
+      var host=modal({title:'In-Charge alerts',wide:true,cancelText:'Close',body:renderInChargeAlertList()});
+      host.addEventListener('click',function(e){
+        var allBtn=e.target.closest('[data-alert-read-all]');
+        if(allBtn){busy(allBtn,true);api('/api/admin/incharge-alerts/read-all',{method:'POST',body:{}}).then(function(r){updateInChargeAlertUi(r.unread||0);INCHARGE_ALERTS.forEach(function(a){a.read_at=a.read_at||new Date().toISOString();});var body=host.querySelector('.modal-body');if(body)body.innerHTML=renderInChargeAlertList();}).catch(function(err){toast(err.message,'error');}).finally(function(){busy(allBtn,false);});return;}
+        var row=e.target.closest('[data-alert-open]'); if(!row)return;
+        var id=Number(row.dataset.alertOpen); busy(row,true);
+        api('/api/admin/incharge-alerts/'+id+'/read',{method:'POST',body:{}}).then(function(r){
+          updateInChargeAlertUi(r.unread||0);var a=r.alert||INCHARGE_ALERTS.find(function(x){return Number(x.id)===id;});host.remove();
+          if(a&&a.page)goto(a.page);
+          if(a&&a.ref_type==='booking'&&a.ref_id&&a.page!=='payments')setTimeout(function(){var x=document.querySelector('[data-detail="'+CSS.escape(String(a.ref_id))+'"]');if(x)x.click();},700);
+          loadInChargeAlerts();
+        }).catch(function(err){toast(err.message,'error');}).finally(function(){busy(row,false);});
+      });
+    });
+  }
   function isAdmin() { return !!(USER && USER.role === 'admin'); }
   function applyRoleUI() {
     $$('#nav .nav-item').forEach(function (b) { b.classList.remove('hidden'); });
@@ -1399,6 +1450,7 @@
   $('#drawer-open').onclick = function () { $('#view-app').classList.toggle('drawer-open'); };
   $('#drawer-backdrop').onclick = function () { $('#view-app').classList.remove('drawer-open'); };
   $('#btn-refresh').onclick = function () { LOADERS[current](); toast('Refreshed.', 'info'); };
+  var alertBell=$('#btn-incharge-alerts'); if(alertBell)alertBell.onclick=showInChargeAlerts;
 
   var more=$('#admin-more-nav');if(more)more.onclick=function(){$('#view-app').classList.add('drawer-open')};
 
@@ -3122,7 +3174,9 @@
       /* Important: save the values currently visible in the form BEFORE testing. */
       var saved=await api('/api/admin/settings',{method:'PUT',body:collectSettingValues(INCHARGE_SETTING_KEYS)});
       SETTINGS=saved;
-      var r=await api('/api/admin/test-incharge',{method:'POST',body:{}});
+      var requestId='ui-'+Date.now()+'-'+Math.random().toString(36).slice(2,10);
+      var r=await api('/api/admin/test-incharge',{method:'POST',body:{request_id:requestId}});
+      if(r.duplicate_suppressed){toast(r.message||'Duplicate TEST ALERT suppressed.','info');await loadSettings();return;}
       var parts=[];
       if((r.channels||[]).indexOf('sms')>=0){var senderNote=r.sms_sender_masked?(' from '+r.sms_sender_masked):'';parts.push('SMS to '+(r.sms_to_masked||maskMobile(saved.incharge_mobile))+senderNote);}
       if((r.channels||[]).indexOf('email')>=0)parts.push('Email');
@@ -3134,7 +3188,7 @@
   };
 
   /* ---------- In-Charge PWA push ---------- */
-  var ADMIN_SW_VERSION='18-push-sync';
+  var ADMIN_SW_VERSION='19-badge-adaptive';
   var PUSH_PREP={reg:null,publicKey:null,serverStatus:null,ready:false,error:null,promise:null};
   function b64ToUint8(s){s=String(s||'').replace(/-/g,'+').replace(/_/g,'/');while(s.length%4)s+='=';var raw=atob(s),a=new Uint8Array(raw.length);for(var i=0;i<raw.length;i++)a[i]=raw.charCodeAt(i);return a;}
   function bytesEqual(a,b){if(!a||!b)return false;var x=new Uint8Array(a),y=new Uint8Array(b);if(x.length!==y.length)return false;for(var i=0;i<x.length;i++)if(x[i]!==y[i])return false;return true;}
@@ -3593,6 +3647,7 @@
       'notification:created': function () { if (!onPage('notifications')) return; if (NT_ACTIVE === 'log') run('notifications', loadNotifications); else if (NT_ACTIVE === 'queue') run('queue', loadQueue); },
       'notification:queued': function () { if (onPage('notifications') && NT_ACTIVE === 'queue') loadQueue(); },
       'notification:updated': function () { if (!onPage('notifications')) return; if (NT_ACTIVE === 'log') run('notifications', loadNotifications); else if (NT_ACTIVE === 'queue') run('queue', loadQueue); },
+      'incharge_alert:updated': function () { loadInChargeAlerts(); },
       'settings:updated': function () { run('settings', function () { loadSettings(); api('/api/branding').then(applyBranding).catch(function () {}); }); },
       'branding:updated': function () { run('branding', function () { api('/api/branding').then(applyBranding).catch(function () {}); }); },
       'system:data-reset': function () { run('operational-reset', refreshAllOperationalData); },
@@ -3639,9 +3694,11 @@
     };
   })();
 
+  document.addEventListener('visibilitychange',function(){if(!document.hidden&&TOKEN&&USER)loadInChargeAlerts();});
+
   /* ---------- mobile-first admin navigation ---------- */
-  $('#admin-mobile-nav').addEventListener('click',function(e){var b=e.target.closest('[data-mobile-page]');if(!b)return;var page=b.dataset.mobilePage;if(page==='more'){modal({title:'More',cancelText:'Close',body:'<div class="list"><button class="list-row is-clickable" data-more-page="players"><span class="list-main"><span class="list-title">Players & Membership</span></span></button><button class="list-row is-clickable" data-more-page="notifications"><span class="list-main"><span class="list-title">Communications</span></span></button><button class="list-row is-clickable" data-more-page="reports"><span class="list-main"><span class="list-title">Reports</span></span></button><button class="list-row is-clickable" data-more-page="settings"><span class="list-main"><span class="list-title">Settings</span></span></button></div>'});return;}goto(page);});
-  document.addEventListener('click',function(e){var b=e.target.closest('[data-more-page]');if(!b)return;var root=b.closest('.modal');if(root)root.remove();goto(b.dataset.morePage);});
+  $('#admin-mobile-nav').addEventListener('click',function(e){var b=e.target.closest('[data-mobile-page]');if(!b)return;var page=b.dataset.mobilePage;if(page==='more'){modal({title:'More',cancelText:'Close',body:'<div class="list"><button class="list-row is-clickable" data-more-page="players"><span class="list-main"><span class="list-title">Players & Membership</span></span><span class="list-chevron">›</span></button><button class="list-row is-clickable" data-more-page="notifications"><span class="list-main"><span class="list-title">Communications</span></span><span class="list-chevron">›</span></button><button class="list-row is-clickable" data-more-page="reports"><span class="list-main"><span class="list-title">Reports</span></span><span class="list-chevron">›</span></button><button class="list-row is-clickable" data-more-page="settings"><span class="list-main"><span class="list-title">Settings</span></span><span class="list-chevron">›</span></button><button class="list-row is-clickable" data-mobile-action="theme"><span class="list-main"><span class="list-title">Toggle theme</span></span></button><button class="list-row is-clickable" data-mobile-action="logout"><span class="list-main"><span class="list-title">Logout</span></span></button></div>'});return;}goto(page);});
+  document.addEventListener('click',function(e){var b=e.target.closest('[data-more-page]');if(b){var root=b.closest('.modal-host');if(root)root.remove();goto(b.dataset.morePage);return;}var a=e.target.closest('[data-mobile-action]');if(!a)return;var root2=a.closest('.modal-host');if(root2)root2.remove();if(a.dataset.mobileAction==='logout'){$('#btn-logout').click();return;}if(a.dataset.mobileAction==='theme'){var t=document.documentElement.getAttribute('data-theme')==='dark'?'light':'dark';applyTheme(t);}});
 
   /* ---------- boot ---------- */
   function showApp() {
@@ -3655,7 +3712,9 @@
     var pushRef=pushParams.get('push_ref_id'),pushType=pushParams.get('push_ref_type');
     if(pushRef&&pushType==='booking')setTimeout(function(){var x=document.querySelector('[data-detail="'+CSS.escape(String(pushRef))+'"]');if(x)x.click();},900);
     applyAdminOperationalSettingsUI();
-    var installBtn=document.getElementById('pwa-install-admin'), security=document.getElementById('set-security'); if(installBtn&&security) security.insertBefore(installBtn,security.firstChild);
+    loadInChargeAlerts();
+    var pushAlertId=Number(pushParams.get('push_alert_id')||0);
+    if(pushAlertId)api('/api/admin/incharge-alerts/'+pushAlertId+'/read',{method:'POST',body:{}}).then(function(r){updateInChargeAlertUi(r.unread||0);}).catch(function(){});
     RT.connect();
   }
   setTimeout(hideSplash, 900);
@@ -3673,7 +3732,7 @@
 
 <script>
 /* PIKOL_PWA_INSTALL_RUNTIME */
-(function(){'use strict';var btn=document.getElementById('pwa-install-admin'),deferredPrompt=null,KEY='pikol_admin_installed_v3';function ios(){return /iPad|iPhone|iPod/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);}function standalone(){return window.matchMedia('(display-mode: standalone)').matches||window.navigator.standalone===true;}function marked(){return localStorage.getItem(KEY)==='1';}function setMarked(v){if(v)localStorage.setItem(KEY,'1');else localStorage.removeItem(KEY);}function showIosGuide(){var g=document.getElementById('ios-pwa-guide');if(g)g.hidden=false;if(typeof toast==='function')toast('iPhone: Safari → Share → Add to Home Screen. Then open PIKOL Admin from the Home Screen icon.','error');}function sync(){if(!btn)return;if(standalone()){setMarked(true);btn.hidden=true;return;}if(ios()){btn.hidden=false;btn.textContent='Install Admin App on iPhone';return;}btn.textContent='Install Admin App';btn.hidden=!deferredPrompt||marked();}window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();deferredPrompt=e;if(!standalone())setMarked(false);sync();});window.addEventListener('appinstalled',function(){setMarked(true);deferredPrompt=null;sync();});window.addEventListener('pageshow',sync);document.addEventListener('visibilitychange',function(){if(!document.hidden)sync();});if(btn)btn.addEventListener('click',async function(){if(ios()){showIosGuide();return;}if(!deferredPrompt)return;btn.disabled=true;try{await deferredPrompt.prompt();var c=await deferredPrompt.userChoice;if(c&&c.outcome==='accepted')setMarked(true);}catch(_){}deferredPrompt=null;btn.disabled=false;sync();});if('serviceWorker' in navigator)window.addEventListener('load',function(){navigator.serviceWorker.register('service-worker.js?v=17-ios-push',{scope:'./',updateViaCache:'none'}).catch(function(){});});sync();})();
+(function(){'use strict';var btn=document.getElementById('pwa-install-admin'),deferredPrompt=null,KEY='pikol_admin_installed_v3';function ios(){return /iPad|iPhone|iPod/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);}function standalone(){return window.matchMedia('(display-mode: standalone)').matches||window.navigator.standalone===true;}function marked(){return localStorage.getItem(KEY)==='1';}function setMarked(v){if(v)localStorage.setItem(KEY,'1');else localStorage.removeItem(KEY);}function showIosGuide(){var g=document.getElementById('ios-pwa-guide');if(g)g.hidden=false;if(typeof toast==='function')toast('iPhone: Safari → Share → Add to Home Screen. Then open PIKOL Admin from the Home Screen icon.','error');}function sync(){if(!btn)return;if(standalone()){setMarked(true);btn.hidden=true;return;}if(ios()){btn.hidden=false;btn.textContent='Install Admin App on iPhone';return;}btn.textContent='Install Admin App';btn.hidden=!deferredPrompt||marked();}window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();deferredPrompt=e;if(!standalone())setMarked(false);sync();});window.addEventListener('appinstalled',function(){setMarked(true);deferredPrompt=null;sync();});window.addEventListener('pageshow',sync);document.addEventListener('visibilitychange',function(){if(!document.hidden)sync();});if(btn)btn.addEventListener('click',async function(){if(ios()){showIosGuide();return;}if(!deferredPrompt)return;btn.disabled=true;try{await deferredPrompt.prompt();var c=await deferredPrompt.userChoice;if(c&&c.outcome==='accepted')setMarked(true);}catch(_){}deferredPrompt=null;btn.disabled=false;sync();});if('serviceWorker' in navigator)window.addEventListener('load',function(){navigator.serviceWorker.register('service-worker.js?v=19-badge-adaptive',{scope:'./',updateViaCache:'none'}).catch(function(){});});sync();})();
 </script>
 
 </body>

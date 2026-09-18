@@ -2,7 +2,7 @@
    Only tables marked data-mobile-cards="true" are transformed. */
 (function () {
   'use strict';
-  var BP = 767;
+  var BP = 1024;
 
   function labels(table) {
     var row = table.tHead && table.tHead.rows[0];

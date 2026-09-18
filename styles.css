@@ -1100,7 +1100,7 @@ table.data.as-cards>tbody>tr.is-fullwidth>td{display:block;border:0;padding:0}
 .admin-mobile-nav{display:none;position:fixed;left:0;right:0;bottom:0;z-index:58;background:color-mix(in srgb,var(--surface) 97%,transparent);border-top:1px solid var(--border);backdrop-filter:blur(14px);padding:6px 6px calc(6px + env(safe-area-inset-bottom));grid-template-columns:repeat(5,minmax(0,1fr));box-shadow:0 -10px 30px rgba(0,0,0,.07)}
 .admin-mobile-nav button{border:0;background:transparent;color:var(--text-secondary);border-radius:12px;min-height:52px;padding:6px 2px;font:inherit;font-size:.67rem;font-weight:700;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;cursor:pointer}.admin-mobile-nav button .ico{font-size:1.05rem}.admin-mobile-nav button.is-active{color:var(--brand-primary);background:var(--brand-primary-soft)}
 @media(max-width:1199px){.admin-content{padding:18px;gap:18px}.card{padding:18px}.kpi-grid,.grid.cols-4{grid-template-columns:repeat(2,minmax(0,1fr))!important}.grid.cols-3{grid-template-columns:repeat(2,minmax(0,1fr))}.btn,.input,.select{min-height:44px}.nav-item{min-height:46px}}
-@media(max-width:767px){body{padding-bottom:env(safe-area-inset-bottom)}.admin-mobile-nav{display:grid}.admin-content{padding:14px 12px calc(var(--mobile-nav-h) + 34px + env(safe-area-inset-bottom));gap:14px}.admin-main .appbar{position:sticky;top:0;z-index:42;background:color-mix(in srgb,var(--surface) 96%,transparent);backdrop-filter:blur(12px)}.admin-main .appbar-inner{min-height:58px}.admin-main .appbar #btn-new-booking{font-size:0;min-width:44px;padding:0}.admin-main .appbar #btn-new-booking::after{content:'＋';font-size:1.25rem}.card-header>.row.wrap{width:100%}.card-header>.row.wrap>*{flex:1 1 145px;max-width:none!important;min-width:0!important}.grid.cols-4,.grid.cols-3,.grid.cols-2{grid-template-columns:1fr!important}.kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}.subnav{position:sticky;top:58px;z-index:35;background:var(--surface);padding-block:6px;margin-inline:-12px;padding-inline:12px;border-bottom:1px solid var(--border)}.pwa-install-inline{max-width:none}.modal-host{padding:0;align-items:end}.modal,.modal.wide{width:100%;max-width:none;max-height:94dvh;border-radius:22px 22px 0 0}.modal-foot{padding-bottom:calc(16px + env(safe-area-inset-bottom))}.bottom-nav{z-index:58;padding-bottom:calc(6px + env(safe-area-inset-bottom));box-shadow:0 -10px 30px rgba(0,0,0,.07)}.app-body{padding-bottom:calc(var(--mobile-nav-h) + 24px + env(safe-area-inset-bottom))}.toast-host{bottom:calc(var(--mobile-nav-h) + 16px + env(safe-area-inset-bottom))!important}
+@media(max-width:767px){body{padding-bottom:env(safe-area-inset-bottom)}.admin-mobile-nav{display:grid}.admin-content{padding:14px 12px calc(var(--mobile-nav-h) + 34px + env(safe-area-inset-bottom));gap:14px}.admin-main .appbar{position:sticky;top:0;z-index:42;background:color-mix(in srgb,var(--surface) 96%,transparent);backdrop-filter:blur(12px)}.admin-main .appbar-inner{min-height:58px}.admin-main .appbar #btn-new-booking{font-size:0;min-width:44px;padding:0}.admin-main .appbar #btn-new-booking::after{content:'＋';font-size:1.25rem}.card-header>.row.wrap{width:100%}.card-header>.row.wrap>*{flex:1 1 145px;max-width:none!important;min-width:0!important}.grid.cols-4,.grid.cols-3,.grid.cols-2{grid-template-columns:1fr!important}.kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}.subnav{position:sticky;top:58px;z-index:35;background:var(--surface);padding-block:6px;margin-inline:-12px;padding-inline:12px;border-bottom:1px solid var(--border)}.pwa-install-inline{max-width:none}.modal-host{padding:0;align-items:end}.modal,.modal.wide{width:100%;max-width:none;max-height:94dvh;border-radius:22px 22px 0 0}.modal-foot{padding-bottom:calc(16px + env(safe-area-inset-bottom))}.bottom-nav{z-index:58;padding-bottom:calc(6px + env(safe-area-inset-bottom));box-shadow:0 -10px 30px rgba(0,0,0,.07)}.app-body{padding-bottom:calc(var(--mobile-nav-h) + 24px + env(safe-area-inset-bottom))}.toast-host{bottom:calc(var(--mobile-nav-h) + 16px + env(safe-area-inset-bottom))!important}}
 @media(min-width:768px) and (max-width:1024px){.admin-content{padding:18px 20px}.modal.wide{width:min(820px,94vw)}.payment-qr-wrap{width:min(240px,36vw)}}
 
 
@@ -1131,4 +1131,85 @@ table.data.as-cards>tbody>tr.is-fullwidth>td{display:block;border:0;padding:0}
   .bottom-nav, .admin-mobile-nav { padding-bottom:max(.45rem, env(safe-area-inset-bottom)); }
   body.player-app { padding-bottom:calc(var(--mobile-nav-h,72px) + env(safe-area-inset-bottom) + 12px); }
   body.admin-app { padding-bottom:calc(var(--mobile-nav-h,72px) + env(safe-area-inset-bottom) + 12px); }
+}
+
+
+/* ==================================================================
+   PIKOL APP-SHELL + BADGE FINAL UPGRADE
+   Phone/tablet are intentional app layouts, not compressed desktop.
+   ================================================================== */
+.admin-alert-bell{position:relative}
+.admin-alert-count{position:absolute;right:-3px;top:-4px;min-width:19px;height:19px;padding:0 5px;border-radius:999px;display:grid;place-items:center;background:#d92323;color:#fff;border:2px solid var(--surface);font-size:.62rem;font-weight:850;line-height:1;box-shadow:0 2px 8px rgba(0,0,0,.18)}
+.incharge-alert-toolbar{padding:0 0 12px;border-bottom:1px solid var(--border);align-items:flex-start}
+.incharge-alert-list{display:grid;gap:8px;margin-top:10px}
+.incharge-alert-row{width:100%;border:1px solid var(--border);background:var(--surface);color:var(--text-primary);border-radius:14px;padding:12px;display:grid;grid-template-columns:10px minmax(0,1fr) auto;gap:10px;align-items:center;text-align:left;font:inherit;cursor:pointer}
+.incharge-alert-row:hover{background:var(--surface-2)}
+.incharge-alert-row.is-unread{border-color:color-mix(in srgb,var(--brand-primary) 38%,var(--border));background:color-mix(in srgb,var(--brand-primary) 5%,var(--surface))}
+.incharge-alert-dot{width:8px;height:8px;border-radius:50%;background:transparent}
+.incharge-alert-row.is-unread .incharge-alert-dot{background:#d92323;box-shadow:0 0 0 3px color-mix(in srgb,#d92323 14%,transparent)}
+.incharge-alert-main{min-width:0;display:grid;gap:4px}.incharge-alert-main strong,.incharge-alert-main span{overflow:hidden;text-overflow:ellipsis}.incharge-alert-main .tiny{white-space:normal}
+
+/* App layout through tablet width. The sidebar becomes the More sheet and the
+   five primary destinations stay thumb-friendly at the bottom. */
+@media (max-width:1024px){
+  body.admin-app,body.player-app{overscroll-behavior-y:contain}
+  body.admin-app .admin-shell{display:block;min-height:100dvh}
+  body.admin-app .sidebar{display:none!important}
+  body.admin-app .drawer-backdrop{display:none!important}
+  body.admin-app #drawer-open{display:none!important}
+  body.admin-app .admin-mobile-nav{display:grid}
+  body.admin-app .admin-main .appbar,body.player-app #view-app>.appbar{position:sticky;top:0;z-index:48;background:color-mix(in srgb,var(--surface) 96%,transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
+  body.admin-app .admin-content{padding:18px 18px calc(var(--mobile-nav-h) + 34px + env(safe-area-inset-bottom));gap:16px}
+  body.admin-app .appbar-inner,body.player-app .appbar-inner{min-height:60px}
+  body.admin-app .container,body.player-app .container{width:min(100% - 28px,960px)}
+  body.admin-app .kpi-grid,body.admin-app .grid.cols-4{grid-template-columns:repeat(2,minmax(0,1fr))!important}
+  body.admin-app .grid.cols-3{grid-template-columns:repeat(2,minmax(0,1fr))!important}
+  body.admin-app .subnav{overflow-x:auto;flex-wrap:nowrap;scrollbar-width:none;-webkit-overflow-scrolling:touch;position:sticky;top:60px;z-index:35;background:var(--surface);padding:7px 0;border-bottom:1px solid var(--border)}
+  body.admin-app .subnav::-webkit-scrollbar{display:none}
+  body.admin-app .subnav-item{white-space:nowrap;min-height:42px}
+  body.admin-app .btn,body.admin-app .input,body.admin-app .select,body.player-app .btn,body.player-app .input,body.player-app .select{min-height:44px}
+  body.admin-app .table-wrap:has(>table.data.as-cards){overflow:visible}
+  body.admin-app table.data.as-cards>tbody{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+  body.admin-app table.data.as-cards>tbody>tr.is-fullwidth{grid-column:1/-1}
+  body.player-app .bottom-nav{display:block;z-index:58;box-shadow:0 -10px 30px rgba(0,0,0,.07)}
+  body.player-app #main-tabs{display:none}
+  body.player-app .app-body{padding-bottom:calc(var(--mobile-nav-h) + 30px + env(safe-area-inset-bottom))!important}
+  body.player-app #view-app>.appbar #btn-logout{display:none}
+  body.player-app .grid.cols-3,body.player-app .grid.cols-4{grid-template-columns:repeat(2,minmax(0,1fr))!important}
+}
+
+/* Tablet: floating navigation gives a native tablet feel without squeezing
+   desktop sidebars into the viewport. */
+@media (min-width:768px) and (max-width:1024px){
+  body.admin-app .admin-mobile-nav,body.player-app .bottom-nav{left:50%;right:auto;bottom:12px;transform:translateX(-50%);width:min(680px,calc(100% - 32px));border:1px solid var(--border);border-radius:20px;padding:7px 9px calc(7px + env(safe-area-inset-bottom));box-shadow:0 16px 42px rgba(0,0,0,.16)}
+  body.player-app .bottom-nav-inner{gap:6px}
+  body.admin-app .admin-mobile-nav button,body.player-app .bottom-nav button{min-height:58px;font-size:.72rem}
+  body.admin-app .modal-host{padding:24px;align-items:center;justify-content:center}
+  body.admin-app .modal,body.admin-app .modal.wide{border-radius:22px;max-height:90dvh}
+  body.player-app .modal-host{padding:24px;place-items:center}
+  body.player-app .modal{border-radius:22px;align-self:center;max-height:90dvh}
+}
+
+/* Phone: one-column content, bottom sheets, full-width thumb navigation. */
+@media (max-width:767px){
+  body.admin-app .admin-mobile-nav,body.player-app .bottom-nav{left:0;right:0;bottom:0;transform:none;width:auto;border-radius:0;border-left:0;border-right:0;border-bottom:0}
+  body.admin-app .admin-content{padding:12px 10px calc(var(--mobile-nav-h) + 28px + env(safe-area-inset-bottom));gap:12px}
+  body.admin-app .container,body.player-app .container{width:calc(100% - 20px)}
+  body.admin-app .grid.cols-4,body.admin-app .grid.cols-3,body.admin-app .grid.cols-2,body.player-app .grid.cols-4,body.player-app .grid.cols-3{grid-template-columns:1fr!important}
+  body.admin-app .kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}
+  body.admin-app table.data.as-cards>tbody{grid-template-columns:1fr}
+  body.admin-app .admin-main .appbar #btn-new-booking{font-size:0;min-width:44px;padding:0}
+  body.admin-app .admin-main .appbar #btn-new-booking::after{content:'＋';font-size:1.25rem}
+  body.admin-app .admin-main .appbar #rt-text{display:none}
+  body.admin-app .admin-alert-bell{min-width:44px}
+  body.admin-app .page-head{margin-bottom:2px}
+  body.admin-app .card,body.admin-app .panel,body.player-app .card{border-radius:16px}
+  .incharge-alert-row{padding:11px 10px;border-radius:13px}
+}
+
+@media (max-width:430px){
+  body.admin-app .kpi-grid{grid-template-columns:1fr 1fr!important;gap:9px}
+  body.admin-app .kpi-grid .stat-card{padding:11px}
+  body.admin-app .kpi-grid .stat-value{font-size:1.4rem}
+  body.admin-app .appbar .brand-tagline{max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 }

@@ -14,7 +14,7 @@
 <script src="config.js"></script>
 <link rel="stylesheet" href="styles.css" />
 </head>
-<body>
+<body class="player-app">
 
 <!-- ========================= BOOT SPLASH ========================= -->
 <div id="boot-splash" class="boot-splash" role="status" aria-live="polite">
@@ -2347,7 +2347,7 @@
   window.addEventListener('appinstalled',function(){setMarked(true);deferredPrompt=null;sync();});
   window.addEventListener('pageshow',sync);document.addEventListener('visibilitychange',function(){if(!document.hidden)sync();});
   if(btn)btn.addEventListener('click',async function(){if(!deferredPrompt)return;btn.disabled=true;try{await deferredPrompt.prompt();var c=await deferredPrompt.userChoice;if(c&&c.outcome==='accepted')setMarked(true);}catch(_){}deferredPrompt=null;btn.disabled=false;sync();});
-  if('serviceWorker' in navigator)window.addEventListener('load',function(){navigator.serviceWorker.register('service-worker.js',{scope:'./'}).catch(function(){});});
+  if('serviceWorker' in navigator)window.addEventListener('load',function(){navigator.serviceWorker.register('service-worker.js?v=19-badge-adaptive',{scope:'./',updateViaCache:'none'}).catch(function(){});});
   sync();
 })();
 </script>

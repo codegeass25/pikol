@@ -1,4 +1,4 @@
-const CACHE = 'pikol-shared-shell-18-push-sync';
+const CACHE = 'pikol-shared-shell-19-badge-adaptive';
 const SHELL = [
   './index.html','./admin.html','./scoring.html','./styles.css','./cards.js','./config.js','./qr-lite.js',
   './manifest.json','./admin-manifest.json','./icons/icon-192.png','./icons/icon-512.png'
@@ -29,17 +29,43 @@ self.addEventListener('fetch', event => {
   })));
 });
 self.addEventListener('message', event => { if (event.data && event.data.type === 'SKIP_WAITING') self.skipWaiting(); });
+async function applyAppBadge(count) {
+  const n = Math.max(0, Number(count) || 0);
+  try {
+    if (n > 0 && 'setAppBadge' in self.registration) await self.registration.setAppBadge(n);
+    else if (n === 0 && 'clearAppBadge' in self.registration) await self.registration.clearAppBadge();
+  } catch (_) {}
+}
 self.addEventListener('push', event => {
   let data = {};
   try { data = event.data ? event.data.json() : {}; }
   catch (_) { data = { body: event.data ? event.data.text() : 'New PIKOL alert' }; }
-  const options = {
-    body: data.body || 'A new item needs your attention.',
-    icon: './icons/icon-192.png', badge: './icons/icon-192.png',
-    tag: data.tag || 'pikol-alert', renotify: true,
-    data: { url: data.url || './admin.html', type: data.type || 'alert' }
-  };
-  event.waitUntil(self.registration.showNotification(data.title || 'PIKOL Alert', options));
+  event.waitUntil((async () => {
+    if (Object.prototype.hasOwnProperty.call(data, 'badgeCount')) await applyAppBadge(data.badgeCount);
+    /* Badge-only sync is used after an alert is reviewed on another device.
+       It intentionally does not create a second visible notification.
+       On Android/Chromium, clearing visible PIKOL notifications when the
+       unread count reaches zero also lets the launcher clear its native dot. */
+    if (data.badgeOnly) {
+      if (Math.max(0, Number(data.badgeCount) || 0) === 0 && self.registration.getNotifications) {
+        try {
+          const notes = await self.registration.getNotifications();
+          notes.forEach(note => {
+            const tag = String(note && note.tag || '');
+            if (!tag || tag.startsWith('pikol-')) note.close();
+          });
+        } catch (_) {}
+      }
+      return;
+    }
+    const options = {
+      body: data.body || 'A new item needs your attention.',
+      icon: './icons/icon-192.png', badge: './icons/icon-192.png',
+      tag: data.tag || 'pikol-alert', renotify: true,
+      data: { url: data.url || './admin.html', type: data.type || 'alert', alertId: data.alertId || null }
+    };
+    await self.registration.showNotification(data.title || 'PIKOL Alert', options);
+  })());
 });
 self.addEventListener('notificationclick', event => {
   event.notification.close();
