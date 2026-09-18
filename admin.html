@@ -3134,8 +3134,8 @@
   };
 
   /* ---------- In-Charge PWA push ---------- */
-  var ADMIN_SW_VERSION='17-ios-push';
-  var PUSH_PREP={reg:null,publicKey:null,ready:false,error:null,promise:null};
+  var ADMIN_SW_VERSION='18-push-sync';
+  var PUSH_PREP={reg:null,publicKey:null,serverStatus:null,ready:false,error:null,promise:null};
   function b64ToUint8(s){s=String(s||'').replace(/-/g,'+').replace(/_/g,'/');while(s.length%4)s+='=';var raw=atob(s),a=new Uint8Array(raw.length);for(var i=0;i<raw.length;i++)a[i]=raw.charCodeAt(i);return a;}
   function bytesEqual(a,b){if(!a||!b)return false;var x=new Uint8Array(a),y=new Uint8Array(b);if(x.length!==y.length)return false;for(var i=0;i<x.length;i++)if(x[i]!==y[i])return false;return true;}
   function isIOS(){return /iPad|iPhone|iPod/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);}
@@ -3172,12 +3172,33 @@
         var pair=await Promise.all([registerAdminWorker(false),api('/api/admin/push/status')]);
         var key=b64ToUint8(pair[1].public_key);
         if(key.length!==65)throw new Error('The PWA push server key is invalid.');
-        PUSH_PREP.reg=pair[0];PUSH_PREP.publicKey=pair[1].public_key;PUSH_PREP.ready=true;PUSH_PREP.error=null;
+        PUSH_PREP.reg=pair[0];PUSH_PREP.publicKey=pair[1].public_key;PUSH_PREP.serverStatus=pair[1]||{};PUSH_PREP.ready=true;PUSH_PREP.error=null;
         return PUSH_PREP;
       }catch(e){PUSH_PREP.ready=false;PUSH_PREP.error=e;throw e;}
       finally{PUSH_PREP.promise=null;}
     })();
     return PUSH_PREP.promise;
+  }
+  function endpointIsServerActive(endpoint,status){
+    var list=(status&&status.active_endpoints)||[];
+    return !!endpoint&&list.indexOf(String(endpoint))>=0;
+  }
+  async function freshPushServerStatus(){
+    var st=await api('/api/admin/push/status');
+    PUSH_PREP.serverStatus=st||{};
+    if(st&&st.public_key)PUSH_PREP.publicKey=st.public_key;
+    return PUSH_PREP.serverStatus;
+  }
+  async function registerPushSubscriptionOnServer(sub){
+    if(!sub||!sub.endpoint)throw new Error('Browser push subscription is missing.');
+    await api('/api/admin/push/subscribe',{method:'POST',body:{subscription:sub.toJSON()}});
+    var st=await freshPushServerStatus();
+    if(!endpointIsServerActive(sub.endpoint,st))throw new Error('PIKOL server did not activate this device subscription.');
+    return st;
+  }
+  async function sendDevicePushTest(sub){
+    if(!sub||!sub.endpoint)return;
+    return await api('/api/admin/push/test-device',{method:'POST',body:{endpoint:sub.endpoint}});
   }
   async function subscribeDesktopWithRepair(reg,publicKey){
     var key=b64ToUint8(publicKey),old=await reg.pushManager.getSubscription();
@@ -3215,8 +3236,6 @@
     var b=$('#btn-pwa-push');if(!b)return;
     iosGuide(false);
     if(!window.isSecureContext){setPushUi('Open the HTTPS PIKOL URL to enable PWA Push.',false);b.disabled=true;return;}
-    /* On iPhone the Push/Notification APIs may not be exposed in a normal
-       browser tab. Show the correct Home Screen requirement before feature detection. */
     if(isIOS()){
       if(!iosAtLeast164()){setPushUi('This iPhone needs iOS 16.4 or later for Web Push.',false,'iOS Update Required');b.disabled=true;iosGuide(true);return;}
       if(!isStandalonePwa()){
@@ -3225,16 +3244,24 @@
       }
     }
     if(!('serviceWorker' in navigator)||!('PushManager' in window)||!('Notification' in window)){setPushUi(isIOS()?'This installed iPhone web app does not expose Web Push. Confirm iOS is updated, then reinstall PIKOL Admin from Safari.':'PWA push is not supported by this browser.',false);b.disabled=true;return;}
-    setPushUi('Preparing secure PWA Push…',false,'Preparing…');b.disabled=true;
+    setPushUi('Checking this device and the PIKOL push server…',false,'Checking…');b.disabled=true;
     try{
       await preparePushContext();
+      var st=await freshPushServerStatus();
       var sub=await PUSH_PREP.reg.pushManager.getSubscription();
-      if(sub){setPushUi(isIOS()?'This iPhone is subscribed for In-Charge push alerts.':'This device is subscribed for In-Charge push alerts.',true);b.disabled=false;return;}
+      if(sub){
+        if(endpointIsServerActive(sub.endpoint,st)){
+          setPushUi(isIOS()?'This iPhone is ACTIVE for In-Charge PWA push alerts.':'This device is ACTIVE for In-Charge PWA push alerts.',true,'Disable PWA Push');
+          b.dataset.pushState='active';b.disabled=false;return;
+        }
+        setPushUi('This device has a browser subscription, but it is NOT active on the PIKOL server. Tap Repair PWA Push.',false,'Repair PWA Push');
+        b.dataset.pushState='repair';b.disabled=false;return;
+      }
       if(Notification.permission==='denied'){
         setPushUi(isIOS()?'Notifications are blocked. Use iPhone Settings → Notifications → PIKOL Admin.':'Notifications are blocked in browser Site Settings.',false);
       }else setPushUi(isIOS()?'PIKOL Admin is installed and ready. Tap Enable PWA Push.':'This device is ready. Tap Enable PWA Push.',false);
-      b.disabled=false;
-    }catch(e){setPushUi('Push setup: '+e.message,false,'Retry PWA Setup');b.disabled=false;}
+      b.dataset.pushState='enable';b.disabled=false;
+    }catch(e){setPushUi('Push setup: '+e.message,false,'Retry PWA Setup');b.dataset.pushState='repair';b.disabled=false;}
   }
   var pwaPushBtn=$('#btn-pwa-push');
   if(pwaPushBtn)pwaPushBtn.onclick=async function(){
@@ -3246,18 +3273,37 @@
     busy(pwaPushBtn,true);
     try{
       if(!PUSH_PREP.ready)await preparePushContext();
-      var reg=PUSH_PREP.reg||await registerAdminWorker(false),current=await reg.pushManager.getSubscription();
-      if(current){
+      var reg=PUSH_PREP.reg||await registerAdminWorker(false);
+      var st=await freshPushServerStatus();
+      var current=await reg.pushManager.getSubscription();
+      var state=current&&endpointIsServerActive(current.endpoint,st)?'active':(current?'repair':'enable');
+
+      if(state==='active'){
         await api('/api/admin/push/unsubscribe',{method:'POST',body:{endpoint:current.endpoint}});
         await current.unsubscribe();
         toast('PWA push disabled on this device.','success');
       }else{
+        /* A browser subscription can survive after the backend has marked it
+           expired/inactive. Do not falsely show "enabled": replace it with a
+           fresh subscription and re-register it server-side. */
+        if(current){
+          try{await current.unsubscribe();}catch(_){}
+          current=null;
+        }
+        if(!isIOS()&&!PUSH_PREP.publicKey)await preparePushContext();
         var sub=isIOS()?await subscribeIOSDirect():await subscribeDesktopWithRepair(reg,PUSH_PREP.publicKey);
-        await api('/api/admin/push/subscribe',{method:'POST',body:{subscription:sub.toJSON()}});
-        toast(isIOS()?'PWA push enabled on this iPhone.':'PWA push enabled for this In-Charge device.','success');
+        await registerPushSubscriptionOnServer(sub);
+        /* Immediate end-to-end provider test. A 404/410 is surfaced now instead
+           of waiting until the next real booking. */
+        await sendDevicePushTest(sub);
+        toast(isIOS()?'PWA push repaired and test alert sent to this iPhone.':'PWA push enabled and test alert sent to this device.','success');
       }
       await refreshAdminPushStatus();
-    }catch(e){toast(e.message,'error');await refreshAdminPushStatus();}
+    }catch(e){
+      toast(e.message,'error');
+      PUSH_PREP.ready=false;PUSH_PREP.serverStatus=null;
+      await refreshAdminPushStatus();
+    }
     finally{busy(pwaPushBtn,false);}
   };
 
