@@ -1369,9 +1369,19 @@
   var INCHARGE_ALERTS = [], INCHARGE_UNREAD = 0;
   async function applyPwaBadgeCount(count) {
     var n=Math.max(0,Number(count)||0);
+    /* Foreground app badge update (iOS Home Screen PWA + supported desktop PWAs). */
     try {
       if(n>0 && 'setAppBadge' in navigator) await navigator.setAppBadge(n);
       else if(n===0 && 'clearAppBadge' in navigator) await navigator.clearAppBadge();
+    } catch(_) {}
+    /* Also tell the controlling service worker. This keeps one badge path for
+       platforms where the worker owns background badge updates. */
+    try {
+      if('serviceWorker' in navigator){
+        var reg=await navigator.serviceWorker.ready;
+        var target=(navigator.serviceWorker.controller || (reg&&reg.active));
+        if(target) target.postMessage({type:'PIKOL_BADGE_SYNC',count:n});
+      }
     } catch(_) {}
   }
   function updateInChargeAlertUi(unread) {
@@ -3188,7 +3198,7 @@
   };
 
   /* ---------- In-Charge PWA push ---------- */
-  var ADMIN_SW_VERSION='19-badge-adaptive';
+  var ADMIN_SW_VERSION='20-live-badge-sync';
   var PUSH_PREP={reg:null,publicKey:null,serverStatus:null,ready:false,error:null,promise:null};
   function b64ToUint8(s){s=String(s||'').replace(/-/g,'+').replace(/_/g,'/');while(s.length%4)s+='=';var raw=atob(s),a=new Uint8Array(raw.length);for(var i=0;i<raw.length;i++)a[i]=raw.charCodeAt(i);return a;}
   function bytesEqual(a,b){if(!a||!b)return false;var x=new Uint8Array(a),y=new Uint8Array(b);if(x.length!==y.length)return false;for(var i=0;i<x.length;i++)if(x[i]!==y[i])return false;return true;}
@@ -3647,7 +3657,12 @@
       'notification:created': function () { if (!onPage('notifications')) return; if (NT_ACTIVE === 'log') run('notifications', loadNotifications); else if (NT_ACTIVE === 'queue') run('queue', loadQueue); },
       'notification:queued': function () { if (onPage('notifications') && NT_ACTIVE === 'queue') loadQueue(); },
       'notification:updated': function () { if (!onPage('notifications')) return; if (NT_ACTIVE === 'log') run('notifications', loadNotifications); else if (NT_ACTIVE === 'queue') run('queue', loadQueue); },
-      'incharge_alert:updated': function () { loadInChargeAlerts(); },
+      'incharge_alert:updated': function (payload) {
+        /* The server includes its authoritative unread count. Apply it first so
+           the bell/app icon changes immediately; refresh the alert list after. */
+        if(payload && Object.prototype.hasOwnProperty.call(payload,'unread')) updateInChargeAlertUi(payload.unread);
+        loadInChargeAlerts();
+      },
       'settings:updated': function () { run('settings', function () { loadSettings(); api('/api/branding').then(applyBranding).catch(function () {}); }); },
       'branding:updated': function () { run('branding', function () { api('/api/branding').then(applyBranding).catch(function () {}); }); },
       'system:data-reset': function () { run('operational-reset', refreshAllOperationalData); },
@@ -3694,7 +3709,11 @@
     };
   })();
 
-  document.addEventListener('visibilitychange',function(){if(!document.hidden&&TOKEN&&USER)loadInChargeAlerts();});
+  function resyncInChargeBadge(){if(TOKEN&&USER)loadInChargeAlerts();}
+  document.addEventListener('visibilitychange',function(){if(!document.hidden)resyncInChargeBadge();});
+  window.addEventListener('focus',resyncInChargeBadge);
+  window.addEventListener('pageshow',resyncInChargeBadge);
+  window.addEventListener('online',resyncInChargeBadge);
 
   /* ---------- mobile-first admin navigation ---------- */
   $('#admin-mobile-nav').addEventListener('click',function(e){var b=e.target.closest('[data-mobile-page]');if(!b)return;var page=b.dataset.mobilePage;if(page==='more'){modal({title:'More',cancelText:'Close',body:'<div class="list"><button class="list-row is-clickable" data-more-page="players"><span class="list-main"><span class="list-title">Players & Membership</span></span><span class="list-chevron">›</span></button><button class="list-row is-clickable" data-more-page="notifications"><span class="list-main"><span class="list-title">Communications</span></span><span class="list-chevron">›</span></button><button class="list-row is-clickable" data-more-page="reports"><span class="list-main"><span class="list-title">Reports</span></span><span class="list-chevron">›</span></button><button class="list-row is-clickable" data-more-page="settings"><span class="list-main"><span class="list-title">Settings</span></span><span class="list-chevron">›</span></button><button class="list-row is-clickable" data-mobile-action="theme"><span class="list-main"><span class="list-title">Toggle theme</span></span></button><button class="list-row is-clickable" data-mobile-action="logout"><span class="list-main"><span class="list-title">Logout</span></span></button></div>'});return;}goto(page);});
@@ -3732,7 +3751,7 @@
 
 <script>
 /* PIKOL_PWA_INSTALL_RUNTIME */
-(function(){'use strict';var btn=document.getElementById('pwa-install-admin'),deferredPrompt=null,KEY='pikol_admin_installed_v3';function ios(){return /iPad|iPhone|iPod/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);}function standalone(){return window.matchMedia('(display-mode: standalone)').matches||window.navigator.standalone===true;}function marked(){return localStorage.getItem(KEY)==='1';}function setMarked(v){if(v)localStorage.setItem(KEY,'1');else localStorage.removeItem(KEY);}function showIosGuide(){var g=document.getElementById('ios-pwa-guide');if(g)g.hidden=false;if(typeof toast==='function')toast('iPhone: Safari → Share → Add to Home Screen. Then open PIKOL Admin from the Home Screen icon.','error');}function sync(){if(!btn)return;if(standalone()){setMarked(true);btn.hidden=true;return;}if(ios()){btn.hidden=false;btn.textContent='Install Admin App on iPhone';return;}btn.textContent='Install Admin App';btn.hidden=!deferredPrompt||marked();}window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();deferredPrompt=e;if(!standalone())setMarked(false);sync();});window.addEventListener('appinstalled',function(){setMarked(true);deferredPrompt=null;sync();});window.addEventListener('pageshow',sync);document.addEventListener('visibilitychange',function(){if(!document.hidden)sync();});if(btn)btn.addEventListener('click',async function(){if(ios()){showIosGuide();return;}if(!deferredPrompt)return;btn.disabled=true;try{await deferredPrompt.prompt();var c=await deferredPrompt.userChoice;if(c&&c.outcome==='accepted')setMarked(true);}catch(_){}deferredPrompt=null;btn.disabled=false;sync();});if('serviceWorker' in navigator)window.addEventListener('load',function(){navigator.serviceWorker.register('service-worker.js?v=19-badge-adaptive',{scope:'./',updateViaCache:'none'}).catch(function(){});});sync();})();
+(function(){'use strict';var btn=document.getElementById('pwa-install-admin'),deferredPrompt=null,KEY='pikol_admin_installed_v3';function ios(){return /iPad|iPhone|iPod/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);}function standalone(){return window.matchMedia('(display-mode: standalone)').matches||window.navigator.standalone===true;}function marked(){return localStorage.getItem(KEY)==='1';}function setMarked(v){if(v)localStorage.setItem(KEY,'1');else localStorage.removeItem(KEY);}function showIosGuide(){var g=document.getElementById('ios-pwa-guide');if(g)g.hidden=false;if(typeof toast==='function')toast('iPhone: Safari → Share → Add to Home Screen. Then open PIKOL Admin from the Home Screen icon.','error');}function sync(){if(!btn)return;if(standalone()){setMarked(true);btn.hidden=true;return;}if(ios()){btn.hidden=false;btn.textContent='Install Admin App on iPhone';return;}btn.textContent='Install Admin App';btn.hidden=!deferredPrompt||marked();}window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();deferredPrompt=e;if(!standalone())setMarked(false);sync();});window.addEventListener('appinstalled',function(){setMarked(true);deferredPrompt=null;sync();});window.addEventListener('pageshow',sync);document.addEventListener('visibilitychange',function(){if(!document.hidden)sync();});if(btn)btn.addEventListener('click',async function(){if(ios()){showIosGuide();return;}if(!deferredPrompt)return;btn.disabled=true;try{await deferredPrompt.prompt();var c=await deferredPrompt.userChoice;if(c&&c.outcome==='accepted')setMarked(true);}catch(_){}deferredPrompt=null;btn.disabled=false;sync();});if('serviceWorker' in navigator)window.addEventListener('load',function(){navigator.serviceWorker.register('service-worker.js?v=20-live-badge-sync',{scope:'./',updateViaCache:'none'}).catch(function(){});});sync();})();
 </script>
 
 </body>

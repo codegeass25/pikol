@@ -1,4 +1,4 @@
-const CACHE = 'pikol-shared-shell-19-badge-adaptive';
+const CACHE = 'pikol-shared-shell-20-live-badge-sync';
 const SHELL = [
   './index.html','./admin.html','./scoring.html','./styles.css','./cards.js','./config.js','./qr-lite.js',
   './manifest.json','./admin-manifest.json','./icons/icon-192.png','./icons/icon-512.png'
@@ -28,12 +28,27 @@ self.addEventListener('fetch', event => {
     return Response.error();
   })));
 });
-self.addEventListener('message', event => { if (event.data && event.data.type === 'SKIP_WAITING') self.skipWaiting(); });
+self.addEventListener('message', event => {
+  if (!event.data) return;
+  if (event.data.type === 'SKIP_WAITING') return self.skipWaiting();
+  if (event.data.type === 'PIKOL_BADGE_SYNC') {
+    const count = event.data.count;
+    if (event.waitUntil) event.waitUntil(applyAppBadge(count));
+    else applyAppBadge(count);
+  }
+});
 async function applyAppBadge(count) {
   const n = Math.max(0, Number(count) || 0);
   try {
-    if (n > 0 && 'setAppBadge' in self.registration) await self.registration.setAppBadge(n);
-    else if (n === 0 && 'clearAppBadge' in self.registration) await self.registration.clearAppBadge();
+    /* WorkerNavigator is the standards path in service-worker context. Keep the
+       registration fallback for older engines that exposed the early API there. */
+    if (n > 0) {
+      if (self.navigator && 'setAppBadge' in self.navigator) await self.navigator.setAppBadge(n);
+      else if ('setAppBadge' in self.registration) await self.registration.setAppBadge(n);
+    } else {
+      if (self.navigator && 'clearAppBadge' in self.navigator) await self.navigator.clearAppBadge();
+      else if ('clearAppBadge' in self.registration) await self.registration.clearAppBadge();
+    }
   } catch (_) {}
 }
 self.addEventListener('push', event => {
