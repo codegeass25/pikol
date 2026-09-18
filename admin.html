@@ -700,7 +700,7 @@
           <div class="panel" style="margin:0 0 18px">
             <div class="row between wrap" style="gap:10px">
               <div><strong>Single In-Charge real-time alerts</strong><div class="tiny muted">Important client actions are sent to the one In-Charge while client confirmations continue normally.</div></div>
-              <button class="btn btn-outline btn-sm" type="button" id="btn-test-incharge">Test saved In-Charge alert</button>
+              <button class="btn btn-outline btn-sm" type="button" id="btn-test-incharge">Save & Test In-Charge Alert</button>
             </div>
             <label class="switch" style="margin:14px 0">
               <input type="checkbox" id="s-incharge_notifications_enabled" data-key="incharge_notifications_enabled" /><span class="track"></span><span>In-Charge alerts enabled</span></label>
@@ -3100,20 +3100,58 @@
   /* smtp_from_name is derived from the white-label facility name. */
   saveSettings($('#set-email'), ['email_enabled','smtp_host','smtp_port','smtp_secure','smtp_user','smtp_pass','smtp_from_email']);
   saveSettings($('#set-sms'), ['sms_enabled','sms_gateway_transport_enabled','sms_gateway_url','sms_gateway_username','sms_gateway_password','sms_gateway_sim','sms_gateway_default_country','sms_gateway_timeout_ms']);
-  saveSettings($('#set-notify'), ['notify_enabled','notify_welcome','notify_bookings','notify_payments','notify_events','notify_announcements','notify_reminders','notify_reminder_hours','notify_event_reminder_hours','notify_quiet_hours','notify_tournament_registration','notify_tournament_payment','notify_tournament_approval','notify_match_schedule','notify_match_reminders','notify_ratings','notify_open_play_registration','notify_open_play_payment','notify_event_updates','incharge_notifications_enabled','incharge_name','incharge_mobile','incharge_email','incharge_sms_enabled','incharge_email_enabled','incharge_push_enabled','incharge_notify_bookings','incharge_notify_payments','incharge_notify_memberships','incharge_notify_events']);
+  var INCHARGE_SETTING_KEYS=['incharge_notifications_enabled','incharge_name','incharge_mobile','incharge_email','incharge_sms_enabled','incharge_email_enabled','incharge_push_enabled','incharge_notify_bookings','incharge_notify_payments','incharge_notify_memberships','incharge_notify_events'];
+  saveSettings($('#set-notify'), ['notify_enabled','notify_welcome','notify_bookings','notify_payments','notify_events','notify_announcements','notify_reminders','notify_reminder_hours','notify_event_reminder_hours','notify_quiet_hours','notify_tournament_registration','notify_tournament_payment','notify_tournament_approval','notify_match_schedule','notify_match_reminders','notify_ratings','notify_open_play_registration','notify_open_play_payment','notify_event_updates'].concat(INCHARGE_SETTING_KEYS));
+  function collectSettingValues(keys){var body={};keys.forEach(function(k){var el=$('#s-'+k);if(!el)return;body[k]=el.type==='checkbox'?(el.checked?'1':'0'):el.value;});return body;}
+  function maskMobile(v){var s=String(v||'').replace(/\D/g,'');return s.length>=4?'••••'+s.slice(-4):'saved mobile';}
   var testInChargeBtn=$('#btn-test-incharge');
-  if(testInChargeBtn) testInChargeBtn.onclick=function(){
+  if(testInChargeBtn) testInChargeBtn.onclick=async function(){
     busy(testInChargeBtn,true);
-    api('/api/admin/test-incharge',{method:'POST',body:{}}).then(function(r){
-      toast('In-Charge test queued for '+((r.channels||[]).join(' + ')||'configured channel')+'.','success');
-      if(onPage('notifications')) loadCommunicationsView();
-    }).catch(function(e){toast(e.message,'error');}).finally(function(){busy(testInChargeBtn,false);});
+    try{
+      /* Important: save the values currently visible in the form BEFORE testing. */
+      var saved=await api('/api/admin/settings',{method:'PUT',body:collectSettingValues(INCHARGE_SETTING_KEYS)});
+      SETTINGS=saved;
+      var r=await api('/api/admin/test-incharge',{method:'POST',body:{}});
+      var parts=[];
+      if((r.channels||[]).indexOf('sms')>=0)parts.push('SMS to '+(r.sms_to_masked||maskMobile(saved.incharge_mobile)));
+      if((r.channels||[]).indexOf('email')>=0)parts.push('Email');
+      if((r.channels||[]).indexOf('push')>=0)parts.push('PWA Push');
+      toast('In-Charge settings saved. Test queued via '+(parts.join(' + ')||'configured channel')+'.','success');
+      if(typeof loadCommunicationsView==='function' && location.hash.indexOf('notifications')>=0)loadCommunicationsView();
+      await loadSettings();
+    }catch(e){toast(e.message,'error');}finally{busy(testInChargeBtn,false);}
   };
 
   /* ---------- In-Charge PWA push ---------- */
   function b64ToUint8(s){s=String(s||'').replace(/-/g,'+').replace(/_/g,'/');while(s.length%4)s+='=';var raw=atob(s),a=new Uint8Array(raw.length);for(var i=0;i<raw.length;i++)a[i]=raw.charCodeAt(i);return a;}
   function setPushUi(text,subscribed){var st=$('#pwa-push-status'),b=$('#btn-pwa-push');if(st)st.textContent=text;if(b){b.textContent=subscribed?'Disable PWA Push':'Enable PWA Push';b.dataset.subscribed=subscribed?'1':'0';}}
-  async function adminPushRegistration(){if(!('serviceWorker' in navigator))throw new Error('Service workers are not supported on this device.');await navigator.serviceWorker.register('service-worker.js',{scope:'./'});return navigator.serviceWorker.ready;}
+  async function adminPushRegistration(forceRefresh){
+    if(!window.isSecureContext)throw new Error('PWA Push requires HTTPS (or localhost). Open the secure HTTPS PIKOL URL.');
+    if(!('serviceWorker' in navigator))throw new Error('Service workers are not supported on this device.');
+    var reg=await navigator.serviceWorker.register('service-worker.js',{scope:'./',updateViaCache:'none'});
+    if(forceRefresh && reg.update)try{await reg.update();}catch(_){}
+    if(reg.waiting)try{reg.waiting.postMessage({type:'SKIP_WAITING'});}catch(_){}
+    return navigator.serviceWorker.ready;
+  }
+  async function subscribeAdminPush(reg,publicKey){
+    var key=b64ToUint8(publicKey);
+    if(key.length!==65)throw new Error('The PWA push server key is invalid. Restart the backend and try again.');
+    try{return await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:key});}
+    catch(firstErr){
+      /* Chromium can retain a stale push registration after a worker update. Refresh once and retry. */
+      var msg=String(firstErr&&firstErr.message||firstErr||'');
+      if(!/push service|registration failed|abort|invalid state/i.test(msg))throw firstErr;
+      await new Promise(function(resolve){setTimeout(resolve,700);});
+      var fresh=await adminPushRegistration(true),old=await fresh.pushManager.getSubscription();
+      if(old)try{await old.unsubscribe();}catch(_){}
+      try{return await fresh.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:key});}
+      catch(secondErr){
+        var m=String(secondErr&&secondErr.message||secondErr||'Push registration failed');
+        if(/push service/i.test(m))throw new Error('Browser push service could not register this device. SMS/Email alerts still work. Check browser notification permission/network, then press Enable PWA Push again.');
+        throw secondErr;
+      }
+    }
+  }
   async function refreshAdminPushStatus(){
     var b=$('#btn-pwa-push'); if(!b)return;
     if(!('serviceWorker' in navigator)||!('PushManager' in window)||!('Notification' in window)){setPushUi('PWA push is not supported by this browser.',false);b.disabled=true;return;}
@@ -3128,7 +3166,7 @@
       else{
         if(Notification.permission!=='granted'){var permission=await Notification.requestPermission();if(permission!=='granted')throw new Error('Notification permission was not allowed.');}
         var st=await api('/api/admin/push/status');
-        var sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:b64ToUint8(st.public_key)});
+        var sub=await subscribeAdminPush(reg,st.public_key);
         await api('/api/admin/push/subscribe',{method:'POST',body:{subscription:sub.toJSON()}});
         toast('PWA push enabled for the In-Charge phone.','success');
       }

@@ -1,4 +1,4 @@
-const CACHE = 'pikol-shared-shell-12-push';
+const CACHE = 'pikol-shared-shell-13-push-fix';
 const SHELL = [
   './index.html','./admin.html','./scoring.html','./styles.css','./cards.js','./config.js','./qr-lite.js',
   './manifest.json','./admin-manifest.json','./icons/icon-192.png','./icons/icon-512.png'
@@ -26,6 +26,7 @@ self.addEventListener('fetch', event => {
     return Response.error();
   })));
 });
+self.addEventListener('message', event => { if (event.data && event.data.type === 'SKIP_WAITING') self.skipWaiting(); });
 self.addEventListener('push', event => {
   let data = {};
   try { data = event.data ? event.data.json() : {}; }
