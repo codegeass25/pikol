@@ -1,24 +1,51 @@
-const CACHE = 'pikol-booking-shell-8-opdata-v1';
+const CACHE = 'pikol-shared-shell-12-push';
 const SHELL = [
-  './index.html','./styles.css','./cards.js','./config.js','./qr-lite.js','./manifest.json',
-  './icons/icon-192.png','./icons/icon-512.png'
+  './index.html','./admin.html','./scoring.html','./styles.css','./cards.js','./config.js','./qr-lite.js',
+  './manifest.json','./admin-manifest.json','./icons/icon-192.png','./icons/icon-512.png'
 ];
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(SHELL)));
   self.skipWaiting();
 });
 self.addEventListener('activate', event => {
-  event.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k !== CACHE && k.startsWith('pikol-booking-shell-')).map(k => caches.delete(k)))));
+  event.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k !== CACHE && (k.startsWith('pikol-') || k.startsWith('pikol-admin-shell-'))).map(k => caches.delete(k)))));
   self.clients.claim();
 });
 self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET') return;
   const url = new URL(event.request.url);
   if (url.origin !== self.location.origin) return;
-  if (/\/(?:admin\.html|admin-manifest\.json|admin-service-worker\.js)$/.test(url.pathname)) return;
   event.respondWith(caches.match(event.request).then(hit => hit || fetch(event.request).then(res => {
     const copy = res.clone();
     caches.open(CACHE).then(cache => cache.put(event.request, copy)).catch(()=>{});
     return res;
-  }).catch(() => caches.match('./index.html'))));
+  }).catch(() => {
+    if (event.request.mode === 'navigate' && /\/admin\.html$/i.test(url.pathname)) return caches.match('./admin.html');
+    if (event.request.mode === 'navigate' && /\/scoring\.html$/i.test(url.pathname)) return caches.match('./scoring.html');
+    if (event.request.mode === 'navigate') return caches.match('./index.html');
+    return Response.error();
+  })));
+});
+self.addEventListener('push', event => {
+  let data = {};
+  try { data = event.data ? event.data.json() : {}; }
+  catch (_) { data = { body: event.data ? event.data.text() : 'New PIKOL alert' }; }
+  const options = {
+    body: data.body || 'A new item needs your attention.',
+    icon: './icons/icon-192.png', badge: './icons/icon-192.png',
+    tag: data.tag || 'pikol-alert', renotify: true,
+    data: { url: data.url || './admin.html', type: data.type || 'alert' }
+  };
+  event.waitUntil(self.registration.showNotification(data.title || 'PIKOL Alert', options));
+});
+self.addEventListener('notificationclick', event => {
+  event.notification.close();
+  const target = new URL((event.notification.data && event.notification.data.url) || './admin.html', self.registration.scope).href;
+  event.waitUntil((async () => {
+    const windows = await clients.matchAll({ type:'window', includeUncontrolled:true });
+    for (const client of windows) {
+      try { if (new URL(client.url).origin === new URL(target).origin) { if ('navigate' in client) await client.navigate(target); return client.focus(); } } catch (_) {}
+    }
+    return clients.openWindow ? clients.openWindow(target) : null;
+  })());
 });

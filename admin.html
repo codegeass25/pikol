@@ -373,7 +373,7 @@
         <section class="section-shell" id="nt-pane-log">
           <div class="card-header"><h2 class="section-title">Notification log</h2>
             <div class="row">
-              <select class="select" id="nt-channel"><option value="all">All channels</option><option value="email">Email</option><option value="sms">SMS</option></select>
+              <select class="select" id="nt-channel"><option value="all">All channels</option><option value="email">Email</option><option value="sms">SMS</option><option value="push">PWA Push</option></select>
               <select class="select" id="nt-status"><option value="all">All statuses</option><option value="sent">Sent</option><option value="failed">Failed</option></select>
             </div></div>
           <div class="table-wrap"><table class="data" data-mobile-cards="true">
@@ -693,9 +693,39 @@
 
         <form class="settings-section hidden mt-5" id="set-notify">
           <h2 class="section-title" style="margin-bottom:6px">Notification engine</h2>
-          <p class="page-subtitle" style="margin-bottom:16px">Every email and SMS in the system runs through one queue with retries, duplicate protection and automatic reminders.</p>
+          <p class="page-subtitle" style="margin-bottom:16px">Email, SMS and In-Charge PWA push alerts run through one durable notification flow with retries and duplicate protection.</p>
           <label class="switch" style="margin-bottom:14px">
             <input type="checkbox" id="s-notify_enabled" data-key="notify_enabled" /><span class="track"></span><span>Notification engine enabled</span></label>
+
+          <div class="panel" style="margin:0 0 18px">
+            <div class="row between wrap" style="gap:10px">
+              <div><strong>Single In-Charge real-time alerts</strong><div class="tiny muted">Important client actions are sent to the one In-Charge while client confirmations continue normally.</div></div>
+              <button class="btn btn-outline btn-sm" type="button" id="btn-test-incharge">Test saved In-Charge alert</button>
+            </div>
+            <label class="switch" style="margin:14px 0">
+              <input type="checkbox" id="s-incharge_notifications_enabled" data-key="incharge_notifications_enabled" /><span class="track"></span><span>In-Charge alerts enabled</span></label>
+            <div class="grid cols-2">
+              <div class="field"><label class="label" for="s-incharge_name">In-Charge name</label><input class="input" id="s-incharge_name" data-key="incharge_name" placeholder="e.g. Juan Dela Cruz"></div>
+              <div class="field"><label class="label" for="s-incharge_mobile">Mobile number</label><input class="input" id="s-incharge_mobile" data-key="incharge_mobile" placeholder="e.g. 09171234567"></div>
+              <div class="field"><label class="label" for="s-incharge_email">Email</label><input class="input" id="s-incharge_email" data-key="incharge_email" type="email" placeholder="incharge@example.com"></div>
+              <div class="field"><span class="label">Delivery channels</span><div class="row wrap"><label class="switch"><input type="checkbox" id="s-incharge_sms_enabled" data-key="incharge_sms_enabled"><span class="track"></span><span>SMS</span></label><label class="switch"><input type="checkbox" id="s-incharge_email_enabled" data-key="incharge_email_enabled"><span class="track"></span><span>Email</span></label><label class="switch"><input type="checkbox" id="s-incharge_push_enabled" data-key="incharge_push_enabled"><span class="track"></span><span>PWA Push</span></label></div></div>
+            </div>
+            <div class="panel" style="margin:10px 0 14px;padding:12px">
+              <div class="row between wrap" style="gap:10px">
+                <div><strong>In-Charge phone PWA</strong><div class="tiny muted" id="pwa-push-status">Checking this device…</div></div>
+                <button class="btn btn-outline btn-sm" type="button" id="btn-pwa-push">Enable PWA Push</button>
+              </div>
+              <div class="tiny muted" style="margin-top:8px">Install/open the Admin PWA on the In-Charge phone, then enable push here once. Browser notification permission must be allowed.</div>
+            </div>
+            <div class="grid cols-2" style="gap:0 18px;margin-top:8px">
+              <label class="switch" style="margin-bottom:10px"><input type="checkbox" id="s-incharge_notify_bookings" data-key="incharge_notify_bookings"><span class="track"></span><span>Bookings / cancellations</span></label>
+              <label class="switch" style="margin-bottom:10px"><input type="checkbox" id="s-incharge_notify_payments" data-key="incharge_notify_payments"><span class="track"></span><span>Booking payments</span></label>
+              <label class="switch" style="margin-bottom:10px"><input type="checkbox" id="s-incharge_notify_memberships" data-key="incharge_notify_memberships"><span class="track"></span><span>Membership requests / payments</span></label>
+              <label class="switch" style="margin-bottom:10px"><input type="checkbox" id="s-incharge_notify_events" data-key="incharge_notify_events"><span class="track"></span><span>Tournament / Open Play</span></label>
+            </div>
+            <div class="tiny muted">Save Notification Settings first, then run the test. If these contact fields are blank, the backend falls back to the active Admin account, then valid facility contact details. Email/SMS use their global transport settings. PWA Push works independently after it is enabled on the In-Charge device.</div>
+          </div>
+
           <div class="grid cols-2" style="gap:0 18px">
             <label class="switch" style="margin-bottom:14px">
               <input type="checkbox" id="s-notify_welcome" data-key="notify_welcome" /><span class="track"></span><span>Welcome message for new players</span></label>
@@ -3031,6 +3061,7 @@
       renderSmsGatewayStatus(s.sms_gateway);
       renderAssetPreviews();
       renderAutoPaymentQr();
+      refreshAdminPushStatus();
     }).catch(function (e) { toast(e.message, 'error'); });
   }
   $$('[data-mirror]').forEach(function (mirror) {
@@ -3069,7 +3100,41 @@
   /* smtp_from_name is derived from the white-label facility name. */
   saveSettings($('#set-email'), ['email_enabled','smtp_host','smtp_port','smtp_secure','smtp_user','smtp_pass','smtp_from_email']);
   saveSettings($('#set-sms'), ['sms_enabled','sms_gateway_transport_enabled','sms_gateway_url','sms_gateway_username','sms_gateway_password','sms_gateway_sim','sms_gateway_default_country','sms_gateway_timeout_ms']);
-  saveSettings($('#set-notify'), ['notify_enabled','notify_welcome','notify_bookings','notify_payments','notify_events','notify_announcements','notify_reminders','notify_reminder_hours','notify_event_reminder_hours','notify_quiet_hours','notify_tournament_registration','notify_tournament_payment','notify_tournament_approval','notify_match_schedule','notify_match_reminders','notify_ratings','notify_open_play_registration','notify_open_play_payment','notify_event_updates']);
+  saveSettings($('#set-notify'), ['notify_enabled','notify_welcome','notify_bookings','notify_payments','notify_events','notify_announcements','notify_reminders','notify_reminder_hours','notify_event_reminder_hours','notify_quiet_hours','notify_tournament_registration','notify_tournament_payment','notify_tournament_approval','notify_match_schedule','notify_match_reminders','notify_ratings','notify_open_play_registration','notify_open_play_payment','notify_event_updates','incharge_notifications_enabled','incharge_name','incharge_mobile','incharge_email','incharge_sms_enabled','incharge_email_enabled','incharge_push_enabled','incharge_notify_bookings','incharge_notify_payments','incharge_notify_memberships','incharge_notify_events']);
+  var testInChargeBtn=$('#btn-test-incharge');
+  if(testInChargeBtn) testInChargeBtn.onclick=function(){
+    busy(testInChargeBtn,true);
+    api('/api/admin/test-incharge',{method:'POST',body:{}}).then(function(r){
+      toast('In-Charge test queued for '+((r.channels||[]).join(' + ')||'configured channel')+'.','success');
+      if(onPage('notifications')) loadCommunicationsView();
+    }).catch(function(e){toast(e.message,'error');}).finally(function(){busy(testInChargeBtn,false);});
+  };
+
+  /* ---------- In-Charge PWA push ---------- */
+  function b64ToUint8(s){s=String(s||'').replace(/-/g,'+').replace(/_/g,'/');while(s.length%4)s+='=';var raw=atob(s),a=new Uint8Array(raw.length);for(var i=0;i<raw.length;i++)a[i]=raw.charCodeAt(i);return a;}
+  function setPushUi(text,subscribed){var st=$('#pwa-push-status'),b=$('#btn-pwa-push');if(st)st.textContent=text;if(b){b.textContent=subscribed?'Disable PWA Push':'Enable PWA Push';b.dataset.subscribed=subscribed?'1':'0';}}
+  async function adminPushRegistration(){if(!('serviceWorker' in navigator))throw new Error('Service workers are not supported on this device.');await navigator.serviceWorker.register('service-worker.js',{scope:'./'});return navigator.serviceWorker.ready;}
+  async function refreshAdminPushStatus(){
+    var b=$('#btn-pwa-push'); if(!b)return;
+    if(!('serviceWorker' in navigator)||!('PushManager' in window)||!('Notification' in window)){setPushUi('PWA push is not supported by this browser.',false);b.disabled=true;return;}
+    try{var reg=await adminPushRegistration(),sub=await reg.pushManager.getSubscription();setPushUi(sub?'This phone is subscribed for In-Charge alerts.':(Notification.permission==='denied'?'Notifications are blocked in browser settings.':'This phone is not yet subscribed.'),!!sub);b.disabled=false;}catch(e){setPushUi('Push status unavailable: '+e.message,false);}
+  }
+  var pwaPushBtn=$('#btn-pwa-push');
+  if(pwaPushBtn)pwaPushBtn.onclick=async function(){
+    busy(pwaPushBtn,true);
+    try{
+      var reg=await adminPushRegistration(),current=await reg.pushManager.getSubscription();
+      if(current){await api('/api/admin/push/unsubscribe',{method:'POST',body:{endpoint:current.endpoint}});await current.unsubscribe();toast('PWA push disabled on this device.','success');}
+      else{
+        if(Notification.permission!=='granted'){var permission=await Notification.requestPermission();if(permission!=='granted')throw new Error('Notification permission was not allowed.');}
+        var st=await api('/api/admin/push/status');
+        var sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:b64ToUint8(st.public_key)});
+        await api('/api/admin/push/subscribe',{method:'POST',body:{subscription:sub.toJSON()}});
+        toast('PWA push enabled for the In-Charge phone.','success');
+      }
+      await refreshAdminPushStatus();
+    }catch(e){toast(e.message,'error');await refreshAdminPushStatus();}finally{busy(pwaPushBtn,false);}
+  };
 
   /* ---------- branding assets (upload / URL / remove) ---------- */
   var ASSET_KEY = { logo: 'logo_url', app_logo: 'app_logo_url', boot_logo: 'boot_logo_url', favicon: 'favicon_url' };
@@ -3413,7 +3478,10 @@
     $('#admin-email').textContent = USER.email;
     applyRoleUI();
     loadCourts();
-    goto('dashboard');
+    var pushParams=new URLSearchParams(location.search),pushPage=pushParams.get('push_page');
+    goto((pushPage&&LOADERS[pushPage])?pushPage:'dashboard');
+    var pushRef=pushParams.get('push_ref_id'),pushType=pushParams.get('push_ref_type');
+    if(pushRef&&pushType==='booking')setTimeout(function(){var x=document.querySelector('[data-detail="'+CSS.escape(String(pushRef))+'"]');if(x)x.click();},900);
     applyAdminOperationalSettingsUI();
     var installBtn=document.getElementById('pwa-install-admin'), security=document.getElementById('set-security'); if(installBtn&&security) security.insertBefore(installBtn,security.firstChild);
     RT.connect();
@@ -3433,7 +3501,7 @@
 
 <script>
 /* PIKOL_PWA_INSTALL_RUNTIME */
-(function(){'use strict';var btn=document.getElementById('pwa-install-admin'),deferredPrompt=null,KEY='pikol_admin_installed_v2';function standalone(){return window.matchMedia('(display-mode: standalone)').matches||window.navigator.standalone===true;}function marked(){return localStorage.getItem(KEY)==='1';}function setMarked(v){if(v)localStorage.setItem(KEY,'1');else localStorage.removeItem(KEY);}function sync(){if(!btn)return;if(standalone()){setMarked(true);btn.hidden=true;return;}btn.hidden=!deferredPrompt||marked();}window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();deferredPrompt=e;if(!standalone())setMarked(false);sync();});window.addEventListener('appinstalled',function(){setMarked(true);deferredPrompt=null;sync();});window.addEventListener('pageshow',sync);document.addEventListener('visibilitychange',function(){if(!document.hidden)sync();});if(btn)btn.addEventListener('click',async function(){if(!deferredPrompt)return;btn.disabled=true;try{await deferredPrompt.prompt();var c=await deferredPrompt.userChoice;if(c&&c.outcome==='accepted')setMarked(true);}catch(_){}deferredPrompt=null;btn.disabled=false;sync();});if('serviceWorker' in navigator)window.addEventListener('load',function(){navigator.serviceWorker.register('admin-service-worker.js',{scope:'./'}).catch(function(){});});sync();})();
+(function(){'use strict';var btn=document.getElementById('pwa-install-admin'),deferredPrompt=null,KEY='pikol_admin_installed_v2';function standalone(){return window.matchMedia('(display-mode: standalone)').matches||window.navigator.standalone===true;}function marked(){return localStorage.getItem(KEY)==='1';}function setMarked(v){if(v)localStorage.setItem(KEY,'1');else localStorage.removeItem(KEY);}function sync(){if(!btn)return;if(standalone()){setMarked(true);btn.hidden=true;return;}btn.hidden=!deferredPrompt||marked();}window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();deferredPrompt=e;if(!standalone())setMarked(false);sync();});window.addEventListener('appinstalled',function(){setMarked(true);deferredPrompt=null;sync();});window.addEventListener('pageshow',sync);document.addEventListener('visibilitychange',function(){if(!document.hidden)sync();});if(btn)btn.addEventListener('click',async function(){if(!deferredPrompt)return;btn.disabled=true;try{await deferredPrompt.prompt();var c=await deferredPrompt.userChoice;if(c&&c.outcome==='accepted')setMarked(true);}catch(_){}deferredPrompt=null;btn.disabled=false;sync();});if('serviceWorker' in navigator)window.addEventListener('load',function(){navigator.serviceWorker.register('service-worker.js',{scope:'./'}).catch(function(){});});sync();})();
 </script>
 
 </body>
