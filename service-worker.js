@@ -1,4 +1,4 @@
-const CACHE = 'pikol-shared-shell-22-cross-browser-push-stable';
+const CACHE = 'pikol-shared-shell-23-cross-device-badge-sync';
 const SHELL = [
   './index.html','./admin.html','./scoring.html','./styles.css','./cards.js','./config.js','./qr-lite.js',
   './manifest.json','./admin-manifest.json','./icons/icon-192.png','./icons/icon-512.png'
@@ -56,7 +56,13 @@ self.addEventListener('push', event => {
   try { data = event.data ? event.data.json() : {}; }
   catch (_) { data = { body: event.data ? event.data.text() : 'New PIKOL alert' }; }
   event.waitUntil((async () => {
-    if (Object.prototype.hasOwnProperty.call(data, 'badgeCount')) await applyAppBadge(data.badgeCount);
+    if (Object.prototype.hasOwnProperty.call(data, 'badgeCount')) {
+      await applyAppBadge(data.badgeCount);
+      try {
+        const openClients = await self.clients.matchAll({ type:'window', includeUncontrolled:true });
+        openClients.forEach(client => { try { client.postMessage({type:'PIKOL_BADGE_SYNC',count:Math.max(0,Number(data.badgeCount)||0)}); } catch (_) {} });
+      } catch (_) {}
+    }
     /* Badge-only sync is used after an alert is reviewed on another device.
        It intentionally does not create a second visible notification.
        On Android/Chromium, clearing visible PIKOL notifications when the
