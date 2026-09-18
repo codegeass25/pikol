@@ -3375,7 +3375,7 @@
   }
   async function updatePushDiagnostics(serverStatus,sub){
     var el=$('#pwa-push-diagnostics');if(!el)return;
-    var name=browserName();
+    var name=browserFamily();
     var install=isStandalonePwa()?'Installed PWA':'Browser tab';
     var perm=('Notification' in window)?Notification.permission:'unsupported';
     var local=sub&&sub.endpoint?'local subscription active':'no local subscription';
@@ -3414,7 +3414,7 @@
         setPushUi(isIOS()?'Notifications are blocked. Use iPhone Settings → Notifications → PIKOL Admin.':'Notifications are blocked in browser Site Settings.',false);
       }else setPushUi(isIOS()?'PIKOL Admin is installed and ready. Tap Enable PWA Push.':'This device is ready. Tap Enable PWA Push.',false);
       b.dataset.pushState='enable';b.disabled=false;
-    }catch(e){setPushUi('Push setup: '+e.message,false,'Retry PWA Setup');var d=$('#pwa-push-diagnostics');if(d)d.textContent='Device diagnostics: '+browserName()+' · '+badgeCapabilityLabel()+' · '+String(e&&e.message||e);b.dataset.pushState='repair';b.disabled=false;}
+    }catch(e){setPushUi('Push setup: '+e.message,false,'Retry PWA Setup');var d=$('#pwa-push-diagnostics');if(d)d.textContent='Device diagnostics: '+browserFamily()+' · '+badgeCapabilityLabel()+' · '+String(e&&e.message||e);b.dataset.pushState='repair';b.disabled=false;}
   }
   var pwaPushBtn=$('#btn-pwa-push');
   if(pwaPushBtn)pwaPushBtn.onclick=async function(){
