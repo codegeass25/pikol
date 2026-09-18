@@ -1,4 +1,4 @@
-const CACHE = 'pikol-shared-shell-20-live-badge-sync';
+const CACHE = 'pikol-shared-shell-22-cross-browser-push-stable';
 const SHELL = [
   './index.html','./admin.html','./scoring.html','./styles.css','./cards.js','./config.js','./qr-lite.js',
   './manifest.json','./admin-manifest.json','./icons/icon-192.png','./icons/icon-512.png'
